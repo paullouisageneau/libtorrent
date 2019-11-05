@@ -34,13 +34,14 @@ POSSIBILITY OF SUCH DAMAGE.
 
 #include <cctype>
 
-#include "libtorrent/tracker_manager.hpp"
-#include "libtorrent/http_tracker_connection.hpp"
-#include "libtorrent/udp_tracker_connection.hpp"
 #include "libtorrent/aux_/io.hpp"
 #include "libtorrent/aux_/session_interface.hpp"
+#include "libtorrent/http_tracker_connection.hpp"
 #include "libtorrent/performance_counters.hpp"
 #include "libtorrent/socket_io.hpp"
+#include "libtorrent/tracker_manager.hpp"
+#include "libtorrent/udp_tracker_connection.hpp"
+#include "libtorrent/websocket_tracker_connection.hpp"
 
 using namespace std::placeholders;
 
@@ -283,9 +284,24 @@ namespace libtorrent {
 			con->start();
 			return;
 		}
-
+		else if(protocol == "ws" || protocol == "wss")
+		{
+			std::shared_ptr<websocket_tracker_connection> con;
+			auto it = m_websocket_conns.find(req.url);
+			if(it != m_websocket_conns.end())
+			{
+				con = it->second;
+				con->queue_request(std::move(req), c);
+			}
+			else
+			{
+				con = std::make_shared<websocket_tracker_connection>(ios, *this, std::move(req), c);
+				m_websocket_conns[req.url] = con;
+				con->start();
+			}
+		}
 		// we need to post the error to avoid deadlock
-		if (auto r = c.lock())
+		else if (auto r = c.lock())
 			post(ios, std::bind(&request_callback::tracker_request_error, r, std::move(req)
 				, errors::unsupported_url_protocol
 				, "", seconds32(0)));

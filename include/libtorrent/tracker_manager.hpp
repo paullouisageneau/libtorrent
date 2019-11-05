@@ -75,12 +75,15 @@ namespace ssl {
 #include "libtorrent/aux_/listen_socket_handle.hpp"
 #include "libtorrent/udp_socket.hpp"
 
+#include "libtorrent/aux_/rtc_signaling.hpp"
+
 namespace libtorrent {
 
 	class tracker_manager;
 	struct timeout_handler;
 	class udp_tracker_connection;
 	class http_tracker_connection;
+	class websocket_tracker_connection;
 	struct resolver_interface;
 	struct counters;
 #if TORRENT_USE_I2P
@@ -152,6 +155,8 @@ enum class event_t : std::uint8_t
 #if TORRENT_USE_I2P
 		i2p_connection* i2pconn = nullptr;
 #endif
+
+		std::vector<aux::rtc_offer> offers;
 	};
 
 	struct tracker_response
@@ -396,6 +401,9 @@ enum class event_t : std::uint8_t
 		std::unordered_map<std::uint32_t, std::shared_ptr<udp_tracker_connection>> m_udp_conns;
 
 		std::vector<std::shared_ptr<http_tracker_connection>> m_http_conns;
+
+		// websocket connections by URL
+		std::unordered_map<std::string, std::shared_ptr<websocket_tracker_connection>> m_websocket_conns;
 
 		send_fun_t m_send_fun;
 		send_fun_hostname_t m_send_fun_hostname;

@@ -14,6 +14,9 @@ set (SOVERSION "10")
 include(GNUInstallDirs)
 include(GeneratePkgConfig)
 
+add_subdirectory(deps/libdatachannel EXCLUDE_FROM_ALL)
+add_subdirectory(deps/json EXCLUDE_FROM_ALL)
+
 set(libtorrent_include_files
 	add_torrent_params
 	address
@@ -159,7 +162,8 @@ set(libtorrent_include_files
 	web_connection_base
 	web_peer_connection
 	write_resume_data
-	xml_parse)
+	xml_parse
+	websocket_tracker_connection)
 
 set(libtorrent_kademlia_include_files
 	announce_flags
@@ -264,7 +268,10 @@ set(libtorrent_aux_include_files
 	utp_stream
 	vector
 	win_crypto_provider
-	win_util)
+	win_util
+	rtc_signaling
+	rtc_stream
+	websocket_stream)
 
 set(try_signal_include_files
 	try_signal
@@ -398,6 +405,10 @@ set(sources
 	mmap_storage
 	posix_disk_io
 	posix_storage
+	rtc_signaling
+	rtc_stream
+	websocket_stream
+	websocket_tracker_connection
 
 # -- extensions --
 	ut_pex
@@ -481,10 +492,10 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES GNU)
 		-Wpedantic
 		-Wparentheses
 		-Wvla
+		-Wc++11-compat
 		-Wno-format-zero-length
 		-Wno-noexcept-type
-		$<$<COMPILE_LANGUAGE:CXX>:-ftemplate-depth=512>
-		$<$<COMPILE_LANGUAGE:CXX>:-Wc++11-compat>)
+		-ftemplate-depth=512)
 elseif(MSVC)
 	add_compile_options(
 		/W4
@@ -775,8 +786,7 @@ include(CheckCXXCompilerFlag)
 add_subdirectory(bindings)
 
 # TODO: Option
-add_subdirectory(deps/libdatachannel)
-target_link_libraries(torrent-rasterbar PRIVATE LibDataChannel::LibDataChannelStatic)
+target_link_libraries(torrent-rasterbar PRIVATE LibDataChannel::LibDataChannelStatic nlohmann_json::nlohmann_json)
 
 install(TARGETS torrent-rasterbar EXPORT LibtorrentRasterbarTargets
 	LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
