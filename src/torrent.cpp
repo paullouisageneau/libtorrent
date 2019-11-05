@@ -417,6 +417,13 @@ bool is_downloading_state(int const st)
 			inc_stats_counter(counters::num_total_pieces_added
 				, m_torrent_file->num_pieces());
 		}
+
+#if TORRENT_USE_RTC
+		m_rtc_signaling = std::shared_ptr<aux::rtc_signaling>(m_ses.get_context()
+			, [this](aux::rtc_stream&& stream) {
+
+			});
+#endif
 	}
 
 	void torrent::inc_stats_counter(int c, int value)
@@ -2796,6 +2803,15 @@ bool is_downloading_state(int const st)
 		// if we are aborting. we don't want any new peers
 		req.num_want = (req.event == event_t::stopped)
 			? 0 : settings().get_int(settings_pack::num_want);
+
+#if TORRENT_USE_RTC
+		// offers
+		if (req.num_want > 0) {
+			m_signaling.generate_offers(
+                      req.num_want, std::bind(torrent::on_generated_offers,
+                                              shared_from_this(), _1));
+        }
+#endif
 
 // some older versions of clang had a bug where it would fire this warning here
 #ifdef __clang__
@@ -5669,6 +5685,13 @@ bool is_downloading_state(int const st)
 	{
 		set_error(ec, torrent_status::error_file_none);
 	}
+
+#if TORRENT_USE_RTC
+	void torrent::on_rtc_stream(aux::rtc_stream&& stream)
+	{
+
+	}
+#endif
 
 	void torrent::remove_connection(peer_connection const* p)
 	{

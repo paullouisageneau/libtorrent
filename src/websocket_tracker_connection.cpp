@@ -30,6 +30,8 @@ POSSIBILITY OF SUCH DAMAGE.
 
 */
 
+#if TORRENT_USE_RTC
+
 #include "libtorrent/websocket_tracker_connection.hpp"
 #include "libtorrent/aux_/escape_string.hpp"
 #include "libtorrent/aux_/session_settings.hpp"
@@ -211,4 +213,6 @@ void websocket_tracker_connection::on_write(error_code const& ec, std::size_t /*
 }
 
 }
+
+#endif
 

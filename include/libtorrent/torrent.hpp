@@ -53,32 +53,21 @@ POSSIBILITY OF SUCH DAMAGE.
 #include <boost/logic/tribool.hpp>
 #include "libtorrent/aux_/disable_warnings_pop.hpp"
 
-#include "libtorrent/fwd.hpp"
-#include "libtorrent/optional.hpp"
-#include "libtorrent/torrent_handle.hpp"
-#include "libtorrent/entry.hpp"
-#include "libtorrent/torrent_info.hpp"
-#include "libtorrent/socket.hpp"
 #include "libtorrent/address.hpp"
-#include "libtorrent/peer_list.hpp"
-#include "libtorrent/tracker_manager.hpp"
-#include "libtorrent/stat.hpp"
 #include "libtorrent/alert.hpp"
-#include "libtorrent/piece_picker.hpp"
-#include "libtorrent/hash_picker.hpp"
-#include "libtorrent/config.hpp"
+#include "libtorrent/assert.hpp"
+#include "libtorrent/aux_/allocating_handler.hpp"
+#include "libtorrent/aux_/deferred_handler.hpp"
+#include "libtorrent/aux_/file_progress.hpp"
+#include "libtorrent/aux_/session_interface.hpp"
+#include "libtorrent/aux_/suggest_piece.hpp"
+#include "libtorrent/aux_/time.hpp"
+#include "libtorrent/aux_/vector.hpp"
 #include "libtorrent/bandwidth_limit.hpp"
 #include "libtorrent/bandwidth_queue_entry.hpp"
-#include "libtorrent/storage_defs.hpp"
-#include "libtorrent/assert.hpp"
-#include "libtorrent/aux_/session_interface.hpp"
-#include "libtorrent/aux_/time.hpp"
+#include "libtorrent/config.hpp"
 #include "libtorrent/deadline_timer.hpp"
-#include "libtorrent/peer_class_set.hpp"
-#include "libtorrent/link.hpp"
-#include "libtorrent/vector_utils.hpp"
 #include "libtorrent/debug.hpp"
-#include "libtorrent/piece_block.hpp"
 #include "libtorrent/disk_interface.hpp"
 #include "libtorrent/aux_/file_progress.hpp"
 #include "libtorrent/aux_/suggest_piece.hpp"
@@ -88,6 +77,27 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/aux_/allocating_handler.hpp"
 #include "libtorrent/aux_/announce_entry.hpp"
 #include "libtorrent/extensions.hpp" // for add_peer_flags_t
+#include "libtorrent/fwd.hpp"
+#include "libtorrent/hash_picker.hpp"
+#include "libtorrent/link.hpp"
+#include "libtorrent/optional.hpp"
+#include "libtorrent/peer_class_set.hpp"
+#include "libtorrent/peer_list.hpp"
+#include "libtorrent/piece_block.hpp"
+#include "libtorrent/piece_picker.hpp"
+#include "libtorrent/socket.hpp"
+#include "libtorrent/stat.hpp"
+#include "libtorrent/storage_defs.hpp"
+#include "libtorrent/torrent_handle.hpp"
+#include "libtorrent/torrent_info.hpp"
+#include "libtorrent/tracker_manager.hpp"
+#include "libtorrent/units.hpp"
+#include "libtorrent/vector_utils.hpp"
+
+#if TORRENT_USE_RTC
+#include "libtorrent/aux_/rtc_signaling.hpp"
+#include "libtorrent/aux_/rtc_stream.hpp"
+#endif
 
 #ifdef TORRENT_SSL_PEERS
 // there is no forward declaration header for asio
@@ -719,6 +729,9 @@ namespace libtorrent {
 
 		void update_auto_sequential();
 	private:
+#if TORRENT_USE_RTC
+          void on_rtc_stream(aux::rtc_stream &&stream);
+#endif
 		void remove_connection(peer_connection const* p);
 	public:
 // --------------------------------------------
@@ -1726,6 +1739,10 @@ namespace libtorrent {
 		// this is set to true while we're looping over m_connections. We may not
 		// mutate the list while doing this
 		mutable int m_iterating_connections = 0;
+#endif
+
+#if TORRENT_USE_RTC
+                std::shared_ptr<aux::rtc_signaling> m_rtc_signaling;
 #endif
 	};
 }

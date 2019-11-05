@@ -17,6 +17,8 @@ include(GeneratePkgConfig)
 add_subdirectory(deps/libdatachannel EXCLUDE_FROM_ALL)
 add_subdirectory(deps/json EXCLUDE_FROM_ALL)
 
+add_definitions(-DTORRENT_USE_RTC=1)
+
 set(libtorrent_include_files
 	add_torrent_params
 	address

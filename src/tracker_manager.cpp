@@ -41,7 +41,10 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/socket_io.hpp"
 #include "libtorrent/tracker_manager.hpp"
 #include "libtorrent/udp_tracker_connection.hpp"
+
+#if TORRENT_USE_RTC
 #include "libtorrent/websocket_tracker_connection.hpp"
+#endif
 
 using namespace std::placeholders;
 
@@ -283,28 +286,28 @@ namespace libtorrent {
 			m_udp_conns[con->transaction_id()] = con;
 			con->start();
 			return;
-		}
-		else if(protocol == "ws" || protocol == "wss")
-		{
-			std::shared_ptr<websocket_tracker_connection> con;
-			auto it = m_websocket_conns.find(req.url);
-			if(it != m_websocket_conns.end())
-			{
-				con = it->second;
-				con->queue_request(std::move(req), c);
-			}
-			else
-			{
-				con = std::make_shared<websocket_tracker_connection>(ios, *this, std::move(req), c);
-				m_websocket_conns[req.url] = con;
-				con->start();
-			}
-		}
-		// we need to post the error to avoid deadlock
-		else if (auto r = c.lock())
-			post(ios, std::bind(&request_callback::tracker_request_error, r, std::move(req)
-				, errors::unsupported_url_protocol
-				, "", seconds32(0)));
+                }
+#if TORRENT_USE_RTC
+                else if (protocol == "ws" || protocol == "wss") {
+                  std::shared_ptr<websocket_tracker_connection> con;
+                  auto it = m_websocket_conns.find(req.url);
+                  if (it != m_websocket_conns.end()) {
+                    con = it->second;
+                    con->queue_request(std::move(req), c);
+                  } else {
+                    con = std::make_shared<websocket_tracker_connection>(
+                        ios, *this, std::move(req), c);
+                    m_websocket_conns[req.url] = con;
+                    con->start();
+                  }
+                }
+#endif
+                // we need to post the error to avoid deadlock
+                else if (auto r = c.lock())
+                  post(ios, std::bind(&request_callback::tracker_request_error,
+                                      r, std::move(req),
+                                      errors::unsupported_url_protocol, "",
+                                      seconds32(0)));
 	}
 
 	bool tracker_manager::incoming_packet(udp::endpoint const& ep

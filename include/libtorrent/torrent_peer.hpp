@@ -235,6 +235,19 @@ namespace libtorrent {
 	};
 #endif
 
+#if TORRENT_USE_RTC
+	struct TORRENT_EXTRA_EXPORT rtc_peer : torrent_peer
+	{
+		rtc_peer(string_view peer_id, peer_source_flags_t src);
+		rtc_peer(rtc_peer const&) = delete;
+		rtc_peer& operator=(rtc_peer const&) = delete;
+		rtc_peer(rtc_peer&&) = default;
+		rtc_peer& operator=(rtc_peer&&) = default;
+
+		aux::string_ptr peer_id;
+	};
+#endif
+
 	struct TORRENT_EXTRA_EXPORT ipv6_peer : torrent_peer
 	{
 		ipv6_peer(tcp::endpoint const& ep, bool connectable, peer_source_flags_t src);
