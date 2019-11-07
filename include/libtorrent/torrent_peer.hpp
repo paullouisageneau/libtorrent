@@ -182,6 +182,9 @@ namespace libtorrent {
 		// set if the i2p_destination is in use in the addr union
 		bool is_i2p_addr:1;
 #endif
+#if TORRENT_USE_RTC
+		bool is_rtc_addr:1;
+#endif
 
 		// if this is true, the torrent_peer has previously
 		// participated in a piece that failed the piece

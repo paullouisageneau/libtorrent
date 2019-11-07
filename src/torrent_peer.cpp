@@ -163,6 +163,9 @@ namespace libtorrent {
 #if TORRENT_USE_I2P
 		, is_i2p_addr(false)
 #endif
+#if TORRENT_USE_RTC
+		, is_rtc_addr(false)
+#endif
 		, on_parole(false)
 		, banned(false)
 		, supports_utp(true) // assume peers support utp

@@ -419,10 +419,8 @@ bool is_downloading_state(int const st)
 		}
 
 #if TORRENT_USE_RTC
-		m_rtc_signaling = std::shared_ptr<aux::rtc_signaling>(m_ses.get_context()
-			, [this](aux::rtc_stream&& stream) {
-
-			});
+		m_rtc_signaling = std::make_shared<aux::rtc_signaling>(m_ses.get_context()
+			, std::bind(&torrent::on_rtc_stream, shared_from_this(), _1));
 #endif
 	}
 
@@ -2807,12 +2805,20 @@ bool is_downloading_state(int const st)
 #if TORRENT_USE_RTC
 		// offers
 		if (req.num_want > 0) {
-			m_signaling.generate_offers(
-                      req.num_want, std::bind(torrent::on_generated_offers,
-                                              shared_from_this(), _1));
+			m_rtc_signaling->generate_offers(req.num_want
+					, [self = shared_from_this(), e, req_ = std::move(req)](error_code const& ec, std::vector<aux::rtc_offer> const& offers) {
+				tracker_request req(req_);
+				if(!ec) req.offers = offers;
+				self->send_tracker_request(e, req);
+			});
         }
+#else
+		send_tracker_request(e, req);
 #endif
+	}
 
+	void torrent::send_tracker_request(event_t e, tracker_request& req)
+	{
 // some older versions of clang had a bug where it would fire this warning here
 #ifdef __clang__
 #pragma clang diagnostic push
