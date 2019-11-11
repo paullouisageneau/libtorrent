@@ -730,7 +730,7 @@ namespace libtorrent {
 		void update_auto_sequential();
 	private:
 #if TORRENT_USE_RTC
-          void on_rtc_stream(aux::rtc_stream &&stream);
+        void on_rtc_stream(peer_id const& pid, aux::rtc_stream_init& stream_init);
 #endif
 		void remove_connection(peer_connection const* p);
 	public:

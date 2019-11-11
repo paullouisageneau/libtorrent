@@ -60,6 +60,12 @@ namespace rtc {
 namespace libtorrent {
 namespace aux {
 
+struct TORRENT_EXTRA_EXPORT rtc_stream_init
+{
+	std::shared_ptr<rtc::PeerConnection> peer_connection;
+	std::shared_ptr<rtc::DataChannel> data_channel;
+};
+
 // This is the user-level stream interface to WebRTC DataChannels.
 struct TORRENT_EXTRA_EXPORT rtc_stream
 {
@@ -70,9 +76,7 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 	using executor_type = tcp::socket::executor_type;
 	executor_type get_executor() { return m_io_context.get_executor(); }
 
-	explicit rtc_stream(io_context& ioc
-		, std::shared_ptr<rtc::PeerConnection> pc
-		, std::shared_ptr<rtc::DataChannel> dc);
+	explicit rtc_stream(io_context& ioc, rtc_stream_init const& init);
 	~rtc_stream();
 	rtc_stream& operator=(rtc_stream const&) = delete;
 	rtc_stream(rtc_stream const&) = delete;
@@ -195,6 +199,14 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 		m_read_handler = handler;
 		issue_read();
 	}
+
+	template <class Protocol>
+	void open(Protocol const&, error_code&)
+	{ /* dummy */ }
+
+	template <class Protocol>
+	void open(Protocol const&)
+	{ /* dummy */ }
 
 	template <class Mutable_Buffers>
 	std::size_t read_some(Mutable_Buffers const& buffers, error_code& ec)

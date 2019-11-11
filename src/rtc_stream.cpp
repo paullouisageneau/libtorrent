@@ -39,12 +39,10 @@ POSSIBILITY OF SUCH DAMAGE.
 namespace libtorrent {
 namespace aux {
 
-rtc_stream::rtc_stream(io_context& ioc
-		, std::shared_ptr<rtc::PeerConnection> pc
-		, std::shared_ptr<rtc::DataChannel> dc)
+rtc_stream::rtc_stream(io_context& ioc, rtc_stream_init const& init)
 	: m_io_context(ioc)
-	, m_peer_connection(pc)
-	, m_data_channel(dc)
+	, m_peer_connection(init.peer_connection)
+    , m_data_channel(init.data_channel)
 {
 	m_data_channel->onMessage([this](std::variant<rtc::binary, rtc::string> const& message) {
 		// Warning: this is called from another thread

@@ -88,7 +88,8 @@ void rtc_signaling::process_answer(rtc_answer const &answer)
 		return;
 	}
 
-	auto& conn = it->second;
+	connection& conn = it->second;
+	conn.pid = answer.pid;
 	conn.peer_connection->setRemoteDescription({answer.sdp, "answer"});
 }
 
@@ -160,9 +161,10 @@ void rtc_signaling::on_data_channel(error_code const& ec, rtc_offer_id offer_id,
         return;
     }
 
-    auto pc = it->second.peer_connection;
+	connection const& conn = it->second;
+	rtc_stream_init init{conn.peer_connection, dc};
+	m_rtc_stream_handler(conn.pid, init);
     m_connections.erase(it);
-	m_rtc_stream_handler(rtc_stream(m_io_context, pc, dc));
 }
 
 rtc_signaling::offer_batch::offer_batch(int count, rtc_signaling::offers_handler handler)

@@ -420,7 +420,7 @@ bool is_downloading_state(int const st)
 
 #if TORRENT_USE_RTC
 		m_rtc_signaling = std::make_shared<aux::rtc_signaling>(m_ses.get_context()
-			, std::bind(&torrent::on_rtc_stream, shared_from_this(), _1));
+			, std::bind(&torrent::on_rtc_stream, shared_from_this(), _1, _2));
 #endif
 	}
 
@@ -5693,9 +5693,83 @@ bool is_downloading_state(int const st)
 	}
 
 #if TORRENT_USE_RTC
-	void torrent::on_rtc_stream(aux::rtc_stream&& stream)
+	void torrent::on_rtc_stream(peer_id const& pid, aux::rtc_stream_init& stream_init)
 	{
+		std::shared_ptr<aux::socket_type> s = std::make_shared<aux::socket_type>(m_ses.get_context());
+		s->instantiate<aux::rtc_stream>(m_ses.get_context(), &stream_init);
 
+		torrent_state st = get_peer_list_state();
+		torrent_peer* peerinfo = m_peer_list->add_rtc_peer(pid.to_string(), peer_info::incoming, {}, &st);
+
+		peer_id const our_pid = aux::generate_peer_id(settings());
+		peer_connection_args pack{
+			&m_ses
+			, &settings()
+			, &m_ses.stats_counters()
+			, &m_ses.disk_thread()
+			, &m_ses.get_context()
+			, shared_from_this()
+			, s
+			, tcp::endpoint{} // TODO
+			, peerinfo
+			, our_pid
+		};
+
+		auto c = std::make_shared<bt_peer_connection>(std::move(pack));
+
+#if TORRENT_USE_ASSERTS
+		c->m_in_constructor = false;
+#endif
+
+		c->add_stat(std::int64_t(peerinfo->prev_amount_download) << 10
+			, std::int64_t(peerinfo->prev_amount_upload) << 10);
+		peerinfo->prev_amount_download = 0;
+		peerinfo->prev_amount_upload = 0;
+
+#ifndef TORRENT_DISABLE_EXTENSIONS
+		for (auto const& ext : m_extensions)
+		{
+			std::shared_ptr<peer_plugin> pp(ext->new_connection(
+					peer_connection_handle(c->self())));
+			if (pp) c->add_extension(pp);
+		}
+#endif
+
+		// add the newly connected peer to this torrent's peer list
+		TORRENT_ASSERT(m_iterating_connections == 0);
+
+		// we don't want to have to allocate memory to disconnect this peer, so
+		// make sure there's enough memory allocated in the deferred_disconnect
+		// list up-front
+		m_peers_to_disconnect.reserve(m_connections.size() + 1);
+
+		sorted_insert(m_connections, c.get());
+		TORRENT_TRY
+		{
+			m_outgoing_pids.insert(our_pid);
+			m_ses.insert_peer(c);
+			need_peer_list();
+			m_peer_list->set_connection(peerinfo, c.get());
+			if (peerinfo->seed)
+			{
+				TORRENT_ASSERT(m_num_seeds < 0xffff);
+				++m_num_seeds;
+			}
+			update_want_peers();
+			update_want_tick();
+			c->start();
+
+			if (c->is_disconnecting()) return;
+		}
+		TORRENT_CATCH (std::exception const&)
+		{
+			TORRENT_ASSERT(m_iterating_connections == 0);
+			c->disconnect(errors::no_error, operation_t::bittorrent, peer_connection_interface::failure);
+			return;
+		}
+
+		if (m_share_mode)
+			recalc_share_mode();
 	}
 #endif
 

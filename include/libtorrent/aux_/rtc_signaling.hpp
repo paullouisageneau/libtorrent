@@ -36,6 +36,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/error_code.hpp"
 #include "libtorrent/io.hpp"
 #include "libtorrent/io_context.hpp"
+#include "libtorrent/peer_id.hpp"
 #include "libtorrent/time.hpp"
 
 #include <boost/functional/hash.hpp>
@@ -54,7 +55,7 @@ namespace rtc {
 namespace libtorrent {
 namespace aux {
 
-class rtc_stream;
+class rtc_stream_init;
 
 class rtc_offer_id : public std::vector<char> {};
 
@@ -76,6 +77,7 @@ struct rtc_answer
 {
 	rtc_offer_id offer_id;
 	std::string sdp;
+	peer_id pid;
 };
 
 // This class handles client signaling for WebRTC DataChannels
@@ -83,7 +85,7 @@ class TORRENT_EXTRA_EXPORT rtc_signaling
 {
 public:
 	using offers_handler = std::function<void(error_code const&, std::vector<rtc_offer> const&)>;
-	using rtc_stream_handler = std::function<void(rtc_stream&&)>;
+	using rtc_stream_handler = std::function<void(peer_id const &pid, rtc_stream_init&)>;
 
 	explicit rtc_signaling(io_context& ioc, rtc_stream_handler handler);
 	~rtc_signaling();
@@ -104,6 +106,7 @@ private:
 		std::shared_ptr<rtc::PeerConnection> peer_connection;
 		std::shared_ptr<rtc::DataChannel> data_channel;
 		std::chrono::steady_clock::time_point created;
+		peer_id pid;
 	};
 
 	connection& create_connection(const rtc_offer_id &offer_id);
