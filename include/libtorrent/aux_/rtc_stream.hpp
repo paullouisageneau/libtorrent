@@ -103,7 +103,7 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 	void bind(endpoint_type const&) {}
 #endif
 
-	void bind(endpoint_type const&, error_code&);
+	void bind(endpoint_type const&, error_code&) {}
 
 #ifndef BOOST_NO_EXCEPTIONS
 	template <class SettableSocketOption>
@@ -111,7 +111,7 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 #endif
 
 	template <class SettableSocketOption>
-	void set_option(SettableSocketOption const&, error_code&) { }
+	void set_option(SettableSocketOption const&, error_code&) {}
 
 #ifndef BOOST_NO_EXCEPTIONS
 	template <class GettableSocketOption>

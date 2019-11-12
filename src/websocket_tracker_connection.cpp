@@ -189,6 +189,15 @@ void websocket_tracker_connection::on_connect(error_code const &ec)
 	send_pending();
 }
 
+void websocket_tracker_connection::on_timeout(error_code const& ec)
+{
+	if(ec)
+	{
+		// TODO
+		return;
+	}
+}
+
 void websocket_tracker_connection::on_read(error_code const& ec, std::size_t /* bytes_read */)
 {
 	if(ec)

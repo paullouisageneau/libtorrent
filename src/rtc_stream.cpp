@@ -76,6 +76,10 @@ void rtc_stream::close()
 	// TODO
 }
 
+bool rtc_stream::is_open() const {
+	return !m_data_channel->isClosed();
+}
+
 std::size_t rtc_stream::available() const
 {
 	return 0; // TODO
