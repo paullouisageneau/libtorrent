@@ -32,17 +32,22 @@ POSSIBILITY OF SUCH DAMAGE.
 
 #include "libtorrent/aux_/rtc_signaling.hpp"
 #include "libtorrent/aux_/rtc_stream.hpp"
+#include "libtorrent/random.hpp"
+#include "libtorrent/torrent.hpp"
 
 #include "rtc/rtc.hpp"
+
+#include <cstdarg>
 
 namespace libtorrent {
 namespace aux {
 
-rtc_signaling::rtc_signaling(io_context& ioc, rtc_stream_handler handler)
+rtc_signaling::rtc_signaling(io_context& ioc, torrent const* t, rtc_stream_handler handler)
 	: m_io_context(ioc)
+	, m_torrent(t)
 	, m_rtc_stream_handler(handler)
 {
-
+	debug_log("*** RTC signaling created");
 }
 
 rtc_signaling::~rtc_signaling()
@@ -50,17 +55,36 @@ rtc_signaling::~rtc_signaling()
 	// TODO
 }
 
+alert_manager& rtc_signaling::alerts() const
+{
+    return m_torrent->alerts();
+}
+
+rtc_offer_id rtc_signaling::generate_offer_id() const
+{
+	rtc_offer_id id;
+	do {
+		aux::random_bytes({id.data(), int(id.size())});
+	}
+	while(m_connections.find(id) != m_connections.end());
+
+	return id;
+}
+
 void rtc_signaling::generate_offers(int count, offers_handler handler)
 {
+	debug_log("*** RTC signaling generating %d offers", count);
+
 	m_offer_batches.push({count, handler});
 
 	while(count--)
 	{
-		rtc_offer_id offer_id; // TODO
+		rtc_offer_id offer_id = generate_offer_id();
 		auto& conn = create_connection(offer_id);
 		auto dc = conn.peer_connection->createDataChannel("webtorrent");
 		dc->onOpen([this, offer_id, dc]() {
 			// Warning: this is called from another thread
+			debug_log("*** RTC signaling data channel open");
 			post(m_io_context, std::bind(&rtc_signaling::on_data_channel
 				, this
 				, boost::system::error_code{}
@@ -75,12 +99,16 @@ void rtc_signaling::generate_offers(int count, offers_handler handler)
 
 void rtc_signaling::process_offer(rtc_offer const &offer)
 {
+	debug_log("*** RTC signaling processing offer");
+
 	auto& conn = create_connection(offer.id);
 	conn.peer_connection->setRemoteDescription({offer.sdp, "offer"});
 }
 
 void rtc_signaling::process_answer(rtc_answer const &answer)
 {
+	debug_log("*** RTC signaling processing answer");
+
 	auto it = m_connections.find(answer.offer_id);
 	if(it == m_connections.end())
 	{
@@ -95,6 +123,8 @@ void rtc_signaling::process_answer(rtc_answer const &answer)
 
 rtc_signaling::connection& rtc_signaling::create_connection(const rtc_offer_id &offer_id)
 {
+	debug_log("*** RTC signaling creating connection for offer");
+
 	rtc::Configuration config;
 
 	auto pc = std::make_shared<rtc::PeerConnection>(config);
@@ -102,8 +132,11 @@ rtc_signaling::connection& rtc_signaling::create_connection(const rtc_offer_id &
 			rtc::PeerConnection::GatheringState state)
 	{
 		// Warning: this is called from another thread
+		debug_log("*** RTC signaling gathering state change: %d", static_cast<int>(state));
+
 		if(state == rtc::PeerConnection::GatheringState::Complete)
 		{
+			debug_log("*** RTC signaling gathering complete");
 			rtc_offer offer{std::move(offer_id), *pc->localDescription()};
 			post(m_io_context, std::bind(&rtc_signaling::on_generated_offer
 				, this
@@ -116,7 +149,9 @@ rtc_signaling::connection& rtc_signaling::create_connection(const rtc_offer_id &
 				std::shared_ptr<rtc::DataChannel> dc)
 	{
         // Warning: this is called from another thread
-        post(m_io_context, std::bind(&rtc_signaling::on_data_channel
+        debug_log("*** RTC signaling got data channel");
+
+		post(m_io_context, std::bind(&rtc_signaling::on_data_channel
         	, this
         	, boost::system::error_code{}
         	, offer_id
@@ -191,6 +226,25 @@ bool rtc_signaling::offer_batch::is_complete() const
 {
 	return int(m_offers.size()) == m_count;
 }
+
+#ifndef TORRENT_DISABLE_LOGGING
+bool rtc_signaling::should_log() const
+{
+	return alerts().should_post<torrent_log_alert>();
+}
+
+TORRENT_FORMAT(2,3)
+void rtc_signaling::debug_log(char const* fmt, ...) const noexcept try
+{
+	if (!alerts().should_post<torrent_log_alert>()) return;
+
+	va_list v;
+	va_start(v, fmt);
+	alerts().emplace_alert<torrent_log_alert>(const_cast<torrent*>(m_torrent)->get_handle(), fmt, v);
+	va_end(v);
+}
+catch (std::exception const&) {}
+#endif
 
 }
 }

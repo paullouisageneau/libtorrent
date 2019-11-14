@@ -420,7 +420,8 @@ bool is_downloading_state(int const st)
 
 #if TORRENT_USE_RTC
 		m_rtc_signaling = std::make_shared<aux::rtc_signaling>(m_ses.get_context()
-			, std::bind(&torrent::on_rtc_stream, shared_from_this(), _1, _2));
+			, this
+			, std::bind(&torrent::on_rtc_stream, this, _1, _2));
 #endif
 	}
 
@@ -2805,7 +2806,8 @@ bool is_downloading_state(int const st)
 #if TORRENT_USE_RTC
 		// offers
 		if (req.num_want > 0) {
-			m_rtc_signaling->generate_offers(req.num_want
+			const int max_num_offers = 1; // TODO
+			m_rtc_signaling->generate_offers(std::min(req.num_want, max_num_offers)
 					, [self = shared_from_this(), e, req_ = std::move(req)](error_code const& ec, std::vector<aux::rtc_offer> const& offers) {
 				tracker_request req(req_);
 				if(!ec) req.offers = offers;

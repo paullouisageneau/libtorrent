@@ -33,6 +33,9 @@ POSSIBILITY OF SUCH DAMAGE.
 #ifndef TORRENT_RTC_SIGNALING_HPP_INCLUDED
 #define TORRENT_RTC_SIGNALING_HPP_INCLUDED
 
+#include "libtorrent/alert.hpp"
+#include "libtorrent/alert_manager.hpp"
+#include "libtorrent/alert_types.hpp"
 #include "libtorrent/error_code.hpp"
 #include "libtorrent/io.hpp"
 #include "libtorrent/io_context.hpp"
@@ -55,9 +58,11 @@ namespace rtc {
 namespace libtorrent {
 namespace aux {
 
-class rtc_stream_init;
+struct rtc_stream_init;
 
-class rtc_offer_id : public std::vector<char> {};
+struct rtc_offer_id : public std::vector<char> {
+	rtc_offer_id() : std::vector<char>(20, '\0') {}
+};
 
 struct rtc_offer_id_hash
 {
@@ -87,16 +92,24 @@ public:
 	using offers_handler = std::function<void(error_code const&, std::vector<rtc_offer> const&)>;
 	using rtc_stream_handler = std::function<void(peer_id const &pid, rtc_stream_init&)>;
 
-	explicit rtc_signaling(io_context& ioc, rtc_stream_handler handler);
+	explicit rtc_signaling(io_context& ioc, torrent const* h, rtc_stream_handler handler);
 	~rtc_signaling();
 	rtc_signaling& operator=(rtc_signaling const&) = delete;
 	rtc_signaling(rtc_signaling const&) = delete;
 	rtc_signaling& operator=(rtc_signaling&&) noexcept = delete;
 	rtc_signaling(rtc_signaling&&) noexcept = delete;
 
+	alert_manager& alerts() const;
+
 	void generate_offers(int count, offers_handler handler);
 	void process_offer(rtc_offer const &offer);
 	void process_answer(rtc_answer const &answer);
+
+	// LOGGING
+#ifndef TORRENT_DISABLE_LOGGING
+	bool should_log() const;
+	void debug_log(const char* fmt, ...) const noexcept TORRENT_FORMAT(2,3);
+#endif
 
 private:
 	struct connection
@@ -109,11 +122,14 @@ private:
 		peer_id pid;
 	};
 
+	rtc_offer_id generate_offer_id() const;
+
 	connection& create_connection(const rtc_offer_id &offer_id);
 	void on_generated_offer(error_code const& ec, rtc_offer offer);
 	void on_data_channel(error_code const& ec, rtc_offer_id offer_id, std::shared_ptr<rtc::DataChannel> dc);
 
 	io_context& m_io_context;
+	torrent const* m_torrent;
 	const rtc_stream_handler m_rtc_stream_handler;
 
 	std::unordered_map<rtc_offer_id, connection, rtc_offer_id_hash> m_connections;
