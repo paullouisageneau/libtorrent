@@ -301,8 +301,8 @@ namespace libtorrent {
             } else {
                 con = std::make_shared<websocket_tracker_connection>(ios, *this, std::move(req), c);
                 m_websocket_conns[req.url] = con;
-                con->start();
             }
+            con->start();
         }
 #endif
         // we need to post the error to avoid deadlock

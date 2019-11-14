@@ -92,7 +92,6 @@ void websocket_tracker_connection::queue_request(tracker_request const& req, std
 {
 	m_pending_requests.push(req);
 	if(m_websocket->is_open()) send_pending();
-	else start();
 }
 
 void websocket_tracker_connection::send_pending()
