@@ -35,6 +35,7 @@ POSSIBILITY OF SUCH DAMAGE.
 
 #include <memory>
 #include <queue>
+#include <tuple>
 
 #include "libtorrent/config.hpp"
 #include "libtorrent/error_code.hpp"
@@ -85,7 +86,7 @@ private:
 	io_context& m_io_context;
 	std::shared_ptr<aux::websocket_stream> m_websocket;
 
-	std::queue<tracker_request> m_pending_requests;
+	std::queue<std::tuple<tracker_request, std::weak_ptr<request_callback>>> m_pending_requests;
 	bool m_sending;
 };
 

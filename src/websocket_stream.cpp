@@ -129,10 +129,11 @@ void websocket_stream::do_resolve(std::string hostname, std::uint16_t port)
 	m_port = port;
 
 	std::shared_ptr<websocket_stream> me(shared_from_this());
+	resolver_flags flags = resolver_interface::abort_on_shutdown;
 
 	ADD_OUTSTANDING_ASYNC("websocket_stream::on_resolve");
 	m_resolver.async_resolve(m_hostname
-		, m_resolve_flags
+		, flags
         , std::bind(&websocket_stream::on_resolve, me, _1, _2));
 }
 
@@ -152,17 +153,19 @@ void websocket_stream::on_resolve(error_code const& e, std::vector<address> cons
     for (auto const& addr : addresses)
 		endpoints.emplace_back(addr, m_port);
 
-	do_tcp_connect(endpoints);
+	do_tcp_connect(std::move(endpoints));
 }
 
-void websocket_stream::do_tcp_connect(std::vector<tcp::endpoint> const& endpoints)
+void websocket_stream::do_tcp_connect(std::vector<tcp::endpoint> endpoints)
 {
+	m_endpoints = std::move(endpoints);
+
 	std::shared_ptr<websocket_stream> me(shared_from_this());
 
 	ADD_OUTSTANDING_ASYNC("websocket_stream::on_tcp_connect");
 	boost::asio::async_connect(m_stream.next_layer().next_layer()
-		, endpoints.begin()
-		, endpoints.end()
+		, m_endpoints.rbegin()
+		, m_endpoints.rend()
 		, std::bind(&websocket_stream::on_tcp_connect, me, _1));
 }
 
@@ -237,22 +240,20 @@ void websocket_stream::on_handshake(error_code const& e)
 
 	m_connecting = false;
 	m_open = true;
+	m_connect_handler(error_code{});
 }
 
-void websocket_stream::on_read(error_code const& e, std::size_t bytes_written) {
+void websocket_stream::on_read(error_code const& e, std::size_t bytes_written, read_handler handler) {
 	// Clean close from remote
     if (e == websocket::error::closed) {
         m_open = false;
     }
 
-	TORRENT_ASSERT(m_read_handler);
-	m_read_handler(e, bytes_written);
+	handler(e, bytes_written);
 }
 
-void websocket_stream::on_write(error_code const& e, std::size_t bytes_written) {
-
-	TORRENT_ASSERT(m_write_handler);
-	m_write_handler(e, bytes_written);
+void websocket_stream::on_write(error_code const& e, std::size_t bytes_written, write_handler handler) {
+	handler(e, bytes_written);
 }
 
 }

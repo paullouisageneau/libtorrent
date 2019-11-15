@@ -47,7 +47,6 @@ POSSIBILITY OF SUCH DAMAGE.
 
 #include <algorithm>
 #include <cctype>
-#include <codecvt>
 #include <cstdio> // for snprintf
 #include <functional>
 #include <list>
@@ -96,7 +95,7 @@ void websocket_tracker_connection::close()
 
 void websocket_tracker_connection::queue_request(tracker_request const& req, std::weak_ptr<request_callback> cb)
 {
-	m_pending_requests.push(req);
+	m_pending_requests.push({req, cb});
 	if(m_websocket->is_open()) send_pending();
 }
 
@@ -104,30 +103,35 @@ void websocket_tracker_connection::send_pending()
 {
 	if(!m_sending && !m_pending_requests.empty())
 	{
-		send(m_pending_requests.front());
-		m_pending_requests.pop();
+		send(std::get<0>(m_pending_requests.front()));
 	}
 }
 
 // RFC 4627: JSON text SHALL be encoded in Unicode. The default encoding is UTF-8.
 
 std::string to_latin1(std::string const& s) {
-	// Convert UTF-8 input to ISO-8859-1 (aka latin1)
-	std::wstring_convert<std::codecvt_utf8<wchar_t>> utf8conv;
-	std::wstring ws = utf8conv.from_bytes(s);
-	std::string result;
-	for(wchar_t wc : ws)
-		result.push_back(char(wc & 0xFF));
-	return result;
+	std::string r;
+	// TODO
+	return r;
 }
 
 std::string from_latin1(std::string const& s) {
 	// Convert ISO-8859-1 (aka latin1) input to UTF-8
-	std::wstring ws;
-	for(char c : s)
-		ws.push_back(wchar_t(c));
-	std::wstring_convert<std::codecvt_utf8<wchar_t>> utf8conv;
-	return utf8conv.to_bytes(ws);
+	std::string r;
+	r.reserve(s.size()*2);
+	for(unsigned char c : s)
+	{
+		if (c & 0x80)
+		{
+			// 2 bytes needed for code point
+			r.push_back(0xC0 | (c >> 6));
+			r.push_back(0x80 | (c & 0x3F));
+		}
+		else {
+			r.push_back(c);
+		}
+	}
+	return r;
 }
 
 void websocket_tracker_connection::send(tracker_request const& req)
@@ -156,7 +160,7 @@ void websocket_tracker_connection::send(tracker_request const& req)
 		json payload_offer;
 		payload_offer["offer_id"] = from_latin1({offer.id.data(), offer.id.size()});
 		payload_offer["offer"]["type"] = "offer";
-		payload_offer["offer"]["sdp"] = ""; // TODO
+		payload_offer["offer"]["sdp"] = offer.sdp;
 		payload["offers"].push_back(payload_offer);
 	}
 
@@ -171,7 +175,7 @@ void websocket_tracker_connection::send(tracker_request const& req)
 
 	std::shared_ptr<websocket_tracker_connection> me(shared_from_this());
     m_websocket->async_write_some(boost::asio::const_buffer(data.data(), data.size())
-    		, std::bind(&websocket_tracker_connection::on_write, me, _1, _2));
+     		, std::bind(&websocket_tracker_connection::on_write, me, _1, _2));
 }
 /*
 void websocket_tracker_connection::answer()
@@ -223,6 +227,14 @@ void websocket_tracker_connection::on_write(error_code const& ec, std::size_t /*
 {
 	m_sending = false;
 
+	if(!m_pending_requests.empty())
+	{
+		// Update requester
+		m_requester = std::get<1>(m_pending_requests.front());
+
+		m_pending_requests.pop();
+	}
+
 	if(ec)
 	{
 		// TODO
@@ -231,6 +243,8 @@ void websocket_tracker_connection::on_write(error_code const& ec, std::size_t /*
 
 	// Continue sending
 	send_pending();
+
+	// TODO: read
 }
 
 }

@@ -81,6 +81,10 @@ struct TORRENT_EXTRA_EXPORT websocket_stream
 	using executor_type = tcp::socket::executor_type;
 	executor_type get_executor() { return m_io_service.get_executor(); }
 
+	using connect_handler = std::function<void(error_code const&)>;
+	using read_handler = std::function<void(error_code const&, std::size_t)>;
+	using write_handler = std::function<void(error_code const&, std::size_t)>;
+
 	websocket_stream(io_context& ios
 		, resolver_interface& resolver
 #ifdef TORRENT_USE_OPENSSL
@@ -182,22 +186,17 @@ struct TORRENT_EXTRA_EXPORT websocket_stream
 			return;
 		}
 
-		TORRENT_ASSERT(!m_read_handler);
-		if (m_read_handler)
-		{
-			post(m_io_service, std::bind<void>(handler, boost::asio::error::operation_not_supported, std::size_t(0)));
-			return;
-		}
-		m_read_handler = handler;
-
 		using namespace std::placeholders;
-		m_stream.async_read(buffers, std::bind(&websocket_stream::on_read, shared_from_this(), _1, _2));
+		m_stream.async_read(buffers, std::bind(&websocket_stream::on_read,
+					shared_from_this(),
+					_1,
+					_2,
+					read_handler(handler)));
 	}
 
 	template <class Const_Buffers, class Handler>
 	void async_write_some(Const_Buffers const& buffers, Handler const& handler)
 	{
-
 		if (!m_open)
 		{
 			post(m_io_service, std::bind<void>(handler
@@ -205,17 +204,12 @@ struct TORRENT_EXTRA_EXPORT websocket_stream
 			return;
 		}
 
-		TORRENT_ASSERT(!m_write_handler);
-		if (m_write_handler)
-		{
-			post(m_io_service, std::bind<void>(handler
-				, boost::asio::error::operation_not_supported, std::size_t(0)));
-			return;
-		}
-		m_write_handler = handler;
-
 		using namespace std::placeholders;
-		m_stream.async_write(buffers, std::bind(&websocket_stream::on_write, shared_from_this(), _1, _2));
+		m_stream.async_write(buffers, std::bind(&websocket_stream::on_write,
+					shared_from_this(),
+					_1,
+					_2,
+					write_handler(handler)));
 	}
 
 	template <class Mutable_Buffers>
@@ -237,21 +231,19 @@ private:
 
 	void do_resolve(std::string hostname, std::uint16_t port);
 	void on_resolve(error_code const& e, std::vector<address> const& addresses);
-	void do_tcp_connect(std::vector<tcp::endpoint> const& endpoints);
+	void do_tcp_connect(std::vector<tcp::endpoint> endpoints);
 	void on_tcp_connect(error_code const& e);
 	void do_tls_handshake();
 	void on_tls_handshake(error_code const& e);
 	void do_handshake();
 	void on_handshake(error_code const& e);
 
-	void on_read(error_code const& e, std::size_t bytes_written);
-	void on_write(error_code const& e, std::size_t bytes_written);
+	void on_read(error_code const& e, std::size_t bytes_written, read_handler handler);
+	void on_write(error_code const& e, std::size_t bytes_written, write_handler handler);
 
 	void cancel_handlers(error_code const& e);
 
-	std::function<void(error_code const&)> m_connect_handler;
-	std::function<void(error_code const&, std::size_t)> m_read_handler;
-	std::function<void(error_code const&, std::size_t)> m_write_handler;
+	connect_handler m_connect_handler;
 
 	io_context& m_io_service;
 
@@ -261,6 +253,7 @@ private:
 	std::string m_hostname;
 	std::uint16_t m_port;
 	std::string m_target;
+	std::vector<tcp::endpoint> m_endpoints;
 
 	websocket::stream<ssl::stream<tcp::socket>> m_stream;
 /*
@@ -270,7 +263,6 @@ private:
 #endif
 */
 	resolver_interface& m_resolver;
-	resolver_flags m_resolve_flags;
 
 	// specifies whether or not the connection is
 	// configured to use a proxy
