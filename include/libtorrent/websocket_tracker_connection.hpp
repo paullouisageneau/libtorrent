@@ -43,6 +43,8 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/resolver_interface.hpp"
 #include "libtorrent/tracker_manager.hpp" // for tracker_connection
 
+#include <boost/beast/core/flat_buffer.hpp>
+
 namespace libtorrent {
 
 class tracker_manager;
@@ -78,6 +80,7 @@ private:
 
 	void send_pending();
 	void send(tracker_request const& req);
+	void do_read();
 	void on_connect(error_code const& ec);
 	void on_timeout(error_code const& ec);
 	void on_read(error_code const& ec, std::size_t bytes_read);
@@ -85,6 +88,7 @@ private:
 
 	io_context& m_io_context;
 	std::shared_ptr<aux::websocket_stream> m_websocket;
+	boost::beast::flat_buffer m_read_buffer;
 
 	std::queue<std::tuple<tracker_request, std::weak_ptr<request_callback>>> m_pending_requests;
 	bool m_sending;

@@ -177,8 +177,8 @@ struct TORRENT_EXTRA_EXPORT websocket_stream
 		do_connect(url);
 	}
 
-	template <class Mutable_Buffers, class Handler>
-	void async_read_some(Mutable_Buffers const& buffers, Handler const& handler)
+	template <class Mutable_Buffer, class Handler>
+	void async_read_some(Mutable_Buffer& buffer, Handler const& handler)
 	{
 		if (!m_open)
 		{
@@ -187,15 +187,15 @@ struct TORRENT_EXTRA_EXPORT websocket_stream
 		}
 
 		using namespace std::placeholders;
-		m_stream.async_read(buffers, std::bind(&websocket_stream::on_read,
+		m_stream.async_read(buffer, std::bind(&websocket_stream::on_read,
 					shared_from_this(),
 					_1,
 					_2,
 					read_handler(handler)));
 	}
 
-	template <class Const_Buffers, class Handler>
-	void async_write_some(Const_Buffers const& buffers, Handler const& handler)
+	template <class Const_Buffer, class Handler>
+	void async_write_some(Const_Buffer const& buffer, Handler const& handler)
 	{
 		if (!m_open)
 		{
@@ -205,7 +205,7 @@ struct TORRENT_EXTRA_EXPORT websocket_stream
 		}
 
 		using namespace std::placeholders;
-		m_stream.async_write(buffers, std::bind(&websocket_stream::on_write,
+		m_stream.async_write(buffer, std::bind(&websocket_stream::on_write,
 					shared_from_this(),
 					_1,
 					_2,

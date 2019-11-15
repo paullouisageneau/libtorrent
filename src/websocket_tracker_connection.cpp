@@ -170,13 +170,14 @@ void websocket_tracker_connection::send(tracker_request const& req)
 	std::shared_ptr<request_callback> cb = requester();
 	if (cb)
 	{
-		cb->debug_log("*** WEBSOCKET_TRACKER_SEND [ %s ]", data.c_str());
+		cb->debug_log("*** WEBSOCKET_TRACKER_WRITE [ %s ]", data.c_str());
 	}
 
 	std::shared_ptr<websocket_tracker_connection> me(shared_from_this());
     m_websocket->async_write_some(boost::asio::const_buffer(data.data(), data.size())
      		, std::bind(&websocket_tracker_connection::on_write, me, _1, _2));
 }
+
 /*
 void websocket_tracker_connection::answer()
 {
@@ -194,6 +195,22 @@ void websocket_tracker_connection::answer()
     payload["answer"]["sdp"] = ""; // TODO
 }
 */
+
+void websocket_tracker_connection::do_read()
+{
+	m_read_buffer.clear();
+
+    std::shared_ptr<request_callback> cb = requester();
+    if (cb)
+    {
+        cb->debug_log("*** WEBSOCKET_TRACKER_READ");
+    }
+
+	std::shared_ptr<websocket_tracker_connection> me(shared_from_this());
+	m_websocket->async_read_some(m_read_buffer
+            , std::bind(&websocket_tracker_connection::on_read, me, _1, _2));
+}
+
 void websocket_tracker_connection::on_connect(error_code const &ec)
 {
 	if(ec)
@@ -203,6 +220,7 @@ void websocket_tracker_connection::on_connect(error_code const &ec)
 	}
 
 	send_pending();
+	do_read();
 }
 
 void websocket_tracker_connection::on_timeout(error_code const& ec)
@@ -221,6 +239,21 @@ void websocket_tracker_connection::on_read(error_code const& ec, std::size_t /* 
         // TODO
         return;
     }
+
+    auto const& buf = m_read_buffer.data();
+    auto data = reinterpret_cast<char const*>(buf.data());
+    auto size = buf.size();
+    auto payload = json::parse(data, data + size);
+
+    std::shared_ptr<request_callback> cb = requester();
+    if (cb)
+    {
+		std::string str(reinterpret_cast<char const*>(buf.data()), buf.size());
+        cb->debug_log("*** WEBSOCKET_TRACKER_RECEIVED [ size: %d data: %s ]", int(str.size()), str.c_str());
+    }
+
+	// Continue reading
+	if(m_websocket->is_open()) do_read();
 }
 
 void websocket_tracker_connection::on_write(error_code const& ec, std::size_t /* bytes_written */)
@@ -235,6 +268,12 @@ void websocket_tracker_connection::on_write(error_code const& ec, std::size_t /*
 		m_pending_requests.pop();
 	}
 
+	std::shared_ptr<request_callback> cb = requester();
+    if (cb)
+    {
+        cb->debug_log("*** WEBSOCKET_TRACKER_SENT");
+    }
+
 	if(ec)
 	{
 		// TODO
@@ -243,8 +282,6 @@ void websocket_tracker_connection::on_write(error_code const& ec, std::size_t /*
 
 	// Continue sending
 	send_pending();
-
-	// TODO: read
 }
 
 }
