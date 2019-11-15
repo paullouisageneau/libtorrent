@@ -79,6 +79,12 @@ void websocket_tracker_connection::start()
 	if(m_websocket->is_open() || m_websocket->is_connecting())
 		return;
 
+    std::shared_ptr<request_callback> cb = requester();
+    if (cb)
+    {
+        cb->debug_log("*** WEBSOCKET_TRACKER_CONNECTING [ url: %s ]", tracker_req().url.c_str());
+    }
+
 	std::shared_ptr<websocket_tracker_connection> me(shared_from_this());
 	m_websocket->async_connect(tracker_req().url, std::bind(&websocket_tracker_connection::on_connect, me, _1));
 }
@@ -143,7 +149,7 @@ void websocket_tracker_connection::send(tracker_request const& req)
 	if(req.event != tracker_request::none)
 		payload["event"] = event_string[static_cast<int>(req.event) - 1];
 
-	payload["peer_id"] = ""; // TODO
+	payload["peer_id"] = from_latin1({req.pid.data(), req.pid.size()});
 
 	payload["offers"] = json::array();
 	for(auto const& offer : req.offers) {
@@ -156,6 +162,13 @@ void websocket_tracker_connection::send(tracker_request const& req)
 
 	m_sending = true;
 	std::string const data = payload.dump();
+
+	std::shared_ptr<request_callback> cb = requester();
+	if (cb)
+	{
+		cb->debug_log("*** WEBSOCKET_TRACKER_SEND [ %s ]", data.c_str());
+	}
+
 	std::shared_ptr<websocket_tracker_connection> me(shared_from_this());
     m_websocket->async_write_some(boost::asio::const_buffer(data.data(), data.size())
     		, std::bind(&websocket_tracker_connection::on_write, me, _1, _2));

@@ -36,12 +36,16 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/error.hpp"
 #include "libtorrent/invariant_check.hpp"
 #include "libtorrent/io_context.hpp"
+#include "libtorrent/parse_url.hpp"
 #include "libtorrent/random.hpp"
 
 #include <boost/asio/connect.hpp>
 #include <boost/asio/ssl/error.hpp>
 
 #include <algorithm>
+#include <tuple>
+
+#include <iostream>
 
 namespace http = boost::beast::http;
 using namespace std::placeholders;
@@ -83,6 +87,7 @@ std::size_t websocket_stream::available() const
 */
 websocket_stream::~websocket_stream()
 {
+
 }
 
 void websocket_stream::do_connect(std::string url) {
@@ -98,11 +103,23 @@ void websocket_stream::do_connect(std::string url) {
     }
 	m_connecting = true;
 
-	// TODO: Parse URL
 	m_url = std::move(url);
-	std::string hostname = "ageneau.net"; // TODO
-	std::uint16_t port = 443;
-	m_target = "/"; // TODO
+
+	std::string protocol, hostname;
+	int port;
+	error_code ec;
+	std::tie(protocol, std::ignore, hostname,  port, m_target) = parse_url_components(m_url, ec);
+	if(ec) {
+		// TODO
+		return;
+	}
+	if(protocol != "wss") {
+		// TODO
+		return;
+	}
+	if(port <= 0) port = 443;
+	if(m_target.empty()) m_target = "/";
+
 	do_resolve(hostname, port);
 }
 
