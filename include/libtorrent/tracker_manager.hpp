@@ -96,6 +96,8 @@ namespace libtorrent {
 namespace aux {
 	struct session_logger;
 	struct session_settings;
+	struct rtc_offer;
+	struct rtc_answer;
 }
 
 using tracker_request_flags_t = flags::bitfield_flag<std::uint8_t, struct tracker_request_flags_tag>;
@@ -234,7 +236,10 @@ enum class event_t : std::uint8_t
 			, error_code const& ec
 			, const std::string& msg
 			, seconds32 retry_interval) = 0;
-
+#if TORRENT_USE_RTC
+		virtual void on_rtc_offer(aux::rtc_offer const&) {};
+		virtual void on_rtc_answer(aux::rtc_answer const&) {};
+#endif
 #ifndef TORRENT_DISABLE_LOGGING
 		virtual bool should_log() const = 0;
 		virtual void debug_log(const char* fmt, ...) const noexcept TORRENT_FORMAT(2,3) = 0;

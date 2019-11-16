@@ -34,6 +34,7 @@ POSSIBILITY OF SUCH DAMAGE.
 
 #include "libtorrent/websocket_tracker_connection.hpp"
 #include "libtorrent/aux_/escape_string.hpp"
+#include "libtorrent/aux_/rtc_signaling.hpp"
 #include "libtorrent/aux_/session_settings.hpp"
 #include "libtorrent/aux_/websocket_stream.hpp"
 #include "libtorrent/config.hpp"
@@ -103,17 +104,11 @@ void websocket_tracker_connection::send_pending()
 {
 	if(!m_sending && !m_pending_requests.empty())
 	{
-		send(std::get<0>(m_pending_requests.front()));
+		send_request(std::get<0>(m_pending_requests.front()));
 	}
 }
 
 // RFC 4627: JSON text SHALL be encoded in Unicode. The default encoding is UTF-8.
-
-std::string to_latin1(std::string const& s) {
-	std::string r;
-	// TODO
-	return r;
-}
 
 std::string from_latin1(std::string const& s) {
 	// Convert ISO-8859-1 (aka latin1) input to UTF-8
@@ -121,20 +116,58 @@ std::string from_latin1(std::string const& s) {
 	r.reserve(s.size()*2);
 	for(unsigned char c : s)
 	{
-		if (c & 0x80)
+		if (!(c & 0x80))
 		{
+			r.push_back(c);
+		}
+		else {
 			// 2 bytes needed for code point
 			r.push_back(0xC0 | (c >> 6));
 			r.push_back(0x80 | (c & 0x3F));
-		}
-		else {
-			r.push_back(c);
 		}
 	}
 	return r;
 }
 
-void websocket_tracker_connection::send(tracker_request const& req)
+std::string to_latin1(std::string const& s) {
+	std::string r;
+	r.reserve(s.size());
+	auto it = s.begin();
+	while(it != s.end())
+	{
+		unsigned char c = *it;
+
+		// Find the number of bytes
+		size_t len;
+		if(!(c & 0x80)) len = 1;
+		else if (!(c & 0x20)) len = 2;
+		else if (!(c & 0x10)) len = 3;
+		else if (!(c & 0x08)) len = 4;
+		else if (!(c & 0x04)) len = 5;
+		else len = 6;
+
+		// Read the code point
+		unsigned int cp;
+		if(len == 1) cp = c; // fast path
+		else {
+			c &= 0xFF >> (len + 1);
+			cp = c << ((len - 1) * 6);
+			while(--len)
+			{
+				if(++it == s.end())
+				c = *it;
+				c &= 0x7F;
+				cp |= c << ((len - 1) * 6);
+			}
+		}
+
+		if(cp <= 0xFF) r.push_back(static_cast<unsigned char>(cp));
+		++it;
+	}
+	return r;
+}
+
+void websocket_tracker_connection::send_request(tracker_request const& req)
 {
 	json payload;
 	payload["action"] = "announce";
@@ -156,7 +189,8 @@ void websocket_tracker_connection::send(tracker_request const& req)
 	payload["peer_id"] = from_latin1({req.pid.data(), req.pid.size()});
 
 	payload["offers"] = json::array();
-	for(auto const& offer : req.offers) {
+	for(auto const& offer : req.offers)
+	{
 		json payload_offer;
 		payload_offer["offer_id"] = from_latin1({offer.id.data(), offer.id.size()});
 		payload_offer["offer"]["type"] = "offer";
@@ -178,23 +212,29 @@ void websocket_tracker_connection::send(tracker_request const& req)
      		, std::bind(&websocket_tracker_connection::on_write, me, _1, _2));
 }
 
-/*
-void websocket_tracker_connection::answer()
+void websocket_tracker_connection::send_answer(sha1_hash const& info_hash, peer_id const& pid, aux::rtc_answer const& answer)
 {
-	auto const& req = tracker_req();
-
-	json payload;
-	payload["action"] = "announce";
-    payload["info_hash"] = from_latin1({req.info_hash.data(), std::size_t(req.info_hash.size())});
-
-    std::vector<char> offer_id; // TODO
-    payload["offer_id"] = from_latin1({offer_id.data(), offer_id.size()});
-    payload["peer_id"] = ""; // TODO
-    payload["to_peer_id"] = ""; // TODO
+    json payload;
+    payload["action"] = "announce";
+    payload["info_hash"] = from_latin1({info_hash.data(), std::size_t(info_hash.size())});
+    payload["offer_id"] = from_latin1({answer.offer_id.data(), answer.offer_id.size()});
+    payload["to_peer_id"] = from_latin1({answer.pid.data(), answer.pid.size()});
+    payload["peer_id"] =  from_latin1({pid.data(), pid.size()});
     payload["answer"]["type"] = "answer";
-    payload["answer"]["sdp"] = ""; // TODO
+    payload["answer"]["sdp"] = answer.sdp;
+
+	std::string const data = payload.dump();
+
+	std::shared_ptr<request_callback> cb = requester();
+	if (cb)
+	{
+		cb->debug_log("*** WEBSOCKET_TRACKER_WRITE [ %s ]", data.c_str());
+	}
+
+	std::shared_ptr<websocket_tracker_connection> me(shared_from_this());
+	m_websocket->async_write_some(boost::asio::const_buffer(data.data(), data.size())
+			, std::bind(&websocket_tracker_connection::on_write, me, _1, _2));
 }
-*/
 
 void websocket_tracker_connection::do_read()
 {
@@ -240,17 +280,42 @@ void websocket_tracker_connection::on_read(error_code const& ec, std::size_t /* 
         return;
     }
 
-    auto const& buf = m_read_buffer.data();
-    auto data = reinterpret_cast<char const*>(buf.data());
-    auto size = buf.size();
-    auto payload = json::parse(data, data + size);
+	std::shared_ptr<request_callback> cb = requester();
+    if (!cb) return;
 
-    std::shared_ptr<request_callback> cb = requester();
-    if (cb)
-    {
-		std::string str(reinterpret_cast<char const*>(buf.data()), buf.size());
-        cb->debug_log("*** WEBSOCKET_TRACKER_RECEIVED [ size: %d data: %s ]", int(str.size()), str.c_str());
-    }
+    auto const& buf = m_read_buffer.data();
+
+	std::string str(reinterpret_cast<char const*>(buf.data()), buf.size());
+	cb->debug_log("*** WEBSOCKET_TRACKER_RECEIVED [ size: %d data: %s ]", int(str.size()), str.c_str());
+
+	auto const data = reinterpret_cast<char const*>(buf.data());
+    auto const size = buf.size();
+    auto const payload = json::parse(data, data + size);
+
+	if(auto it = payload.find("offer"); it != payload.end())
+	{
+		auto const &payload_offer = *it;
+		auto sdp = payload_offer["sdp"].get<std::string>();
+		auto id = to_latin1(payload["offer_id"].get<std::string>());
+		auto pid = to_latin1(payload["peer_id"].get<std::string>());
+		auto info_hash = to_latin1(payload["info_hash"].get<std::string>());
+
+		std::shared_ptr<websocket_tracker_connection> me(shared_from_this());
+		aux::rtc_offer offer{span<const char>(id), peer_id(pid), std::move(sdp)
+			, std::bind(&websocket_tracker_connection::send_answer, me, sha1_hash(info_hash), _1, _2)};
+		cb->on_rtc_offer(offer);
+	}
+
+	if(auto it = payload.find("answer"); it != payload.end())
+	{
+		auto const &payload_answer = *it;
+		auto sdp = payload_answer["sdp"].get<std::string>();
+		auto id = to_latin1(payload["offer_id"].get<std::string>());
+		auto pid = to_latin1(payload["peer_id"].get<std::string>());
+
+		aux::rtc_answer answer{span<const char>(id), peer_id(pid), std::move(sdp)};
+		cb->on_rtc_answer(answer);
+	}
 
 	// Continue reading
 	if(m_websocket->is_open()) do_read();

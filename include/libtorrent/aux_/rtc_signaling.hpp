@@ -40,6 +40,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/io.hpp"
 #include "libtorrent/io_context.hpp"
 #include "libtorrent/peer_id.hpp"
+#include "libtorrent/span.hpp"
 #include "libtorrent/time.hpp"
 
 #include <boost/functional/hash.hpp>
@@ -62,37 +63,48 @@ struct rtc_stream_init;
 
 struct rtc_offer_id : public std::vector<char> {
 	rtc_offer_id() : std::vector<char>(20, '\0') {}
+	rtc_offer_id(span<char const> s) : std::vector<char>(s.begin(), s.end()) {}
 };
 
 struct rtc_offer_id_hash
 {
-	std::size_t operator()(const rtc_offer_id &id) const
+	std::size_t operator()(rtc_offer_id const& id) const
 	{
         return boost::hash<std::vector<char>>{}(id);
     }
 };
 
-struct rtc_offer
-{
-	rtc_offer_id id;
-	std::string sdp;
-};
-
 struct rtc_answer
 {
 	rtc_offer_id offer_id;
-	std::string sdp;
 	peer_id pid;
+	std::string sdp;
 };
+
+struct rtc_offer
+{
+	rtc_offer_id id;
+	peer_id pid;
+	std::string sdp;
+	std::function<void(peer_id const &pid, rtc_answer const&)> answer_callback;
+};
+
+class rtc_answer_interface
+{
+public:
+	void send_answer(rtc_answer const& answer);
+};
+
 
 // This class handles client signaling for WebRTC DataChannels
 class TORRENT_EXTRA_EXPORT rtc_signaling
 {
 public:
 	using offers_handler = std::function<void(error_code const&, std::vector<rtc_offer> const&)>;
+	using description_handler = std::function<void(std::string const& description)>;
 	using rtc_stream_handler = std::function<void(peer_id const &pid, rtc_stream_init&)>;
 
-	explicit rtc_signaling(io_context& ioc, torrent const* h, rtc_stream_handler handler);
+	explicit rtc_signaling(io_context& ioc, torrent* t, rtc_stream_handler handler);
 	~rtc_signaling();
 	rtc_signaling& operator=(rtc_signaling const&) = delete;
 	rtc_signaling(rtc_signaling const&) = delete;
@@ -102,8 +114,8 @@ public:
 	alert_manager& alerts() const;
 
 	void generate_offers(int count, offers_handler handler);
-	void process_offer(rtc_offer const &offer);
-	void process_answer(rtc_answer const &answer);
+	void process_offer(rtc_offer const& offer);
+	void process_answer(rtc_answer const& answer);
 
 	// LOGGING
 #ifndef TORRENT_DISABLE_LOGGING
@@ -124,12 +136,13 @@ private:
 
 	rtc_offer_id generate_offer_id() const;
 
-	connection& create_connection(const rtc_offer_id &offer_id);
+	connection& create_connection(rtc_offer_id const& offer_id, description_handler handler);
 	void on_generated_offer(error_code const& ec, rtc_offer offer);
+	void on_generated_answer(error_code const& ec, rtc_answer answer, rtc_offer offer);
 	void on_data_channel(error_code const& ec, rtc_offer_id offer_id, std::shared_ptr<rtc::DataChannel> dc);
 
 	io_context& m_io_context;
-	torrent const* m_torrent;
+	torrent* m_torrent;
 	const rtc_stream_handler m_rtc_stream_handler;
 
 	std::unordered_map<rtc_offer_id, connection, rtc_offer_id_hash> m_connections;

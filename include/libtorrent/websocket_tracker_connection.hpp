@@ -52,6 +52,8 @@ struct peer_entry;
 
 namespace aux {
 	class websocket_stream;
+	class rtc_offer;
+	class rtc_answer;
 }
 
 class TORRENT_EXTRA_EXPORT websocket_tracker_connection
@@ -79,7 +81,8 @@ private:
 	}
 
 	void send_pending();
-	void send(tracker_request const& req);
+	void send_request(tracker_request const& req);
+	void send_answer(sha1_hash const& info_hash, peer_id const& pid, aux::rtc_answer const& answer);
 	void do_read();
 	void on_connect(error_code const& ec);
 	void on_timeout(error_code const& ec);

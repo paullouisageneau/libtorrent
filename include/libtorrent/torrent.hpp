@@ -730,6 +730,8 @@ namespace libtorrent {
 		void update_auto_sequential();
 	private:
 #if TORRENT_USE_RTC
+		void on_rtc_offer(aux::rtc_offer const& offer);
+		void on_rtc_answer(aux::rtc_answer const& answer);
         void on_rtc_stream(peer_id const& pid, aux::rtc_stream_init& stream_init);
 #endif
 		void remove_connection(peer_connection const* p);
@@ -790,6 +792,7 @@ namespace libtorrent {
 #endif
 
 		aux::announce_entry* find_tracker(std::string const& url);
+
 // --------------------------------------------
 		// PIECE MANAGEMENT
 

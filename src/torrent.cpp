@@ -5695,6 +5695,16 @@ bool is_downloading_state(int const st)
 	}
 
 #if TORRENT_USE_RTC
+	void torrent::on_rtc_offer(aux::rtc_offer const& offer)
+	{
+		m_rtc_signaling->process_offer(offer);
+	}
+
+	void torrent::on_rtc_answer(aux::rtc_answer const& answer)
+	{
+		m_rtc_signaling->process_answer(answer);
+	}
+
 	void torrent::on_rtc_stream(peer_id const& pid, aux::rtc_stream_init& stream_init)
 	{
 		std::shared_ptr<aux::socket_type> s = std::make_shared<aux::socket_type>(m_ses.get_context());
