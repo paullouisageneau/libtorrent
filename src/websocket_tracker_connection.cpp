@@ -154,7 +154,7 @@ std::string to_latin1(std::string const& s) {
 			cp = c << ((len - 1) * 6);
 			while(--len)
 			{
-				if(++it == s.end())
+				if(++it == s.end()) return r; // string is truncated
 				c = *it;
 				c &= 0x7F;
 				cp |= c << ((len - 1) * 6);
