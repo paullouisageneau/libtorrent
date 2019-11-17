@@ -150,6 +150,7 @@ rtc_signaling::connection& rtc_signaling::create_connection(rtc_offer_id const& 
 	debug_log("*** RTC signaling creating connection for offer");
 
 	rtc::Configuration config;
+	config.iceServers.emplace_back("stun.l.google.com:19302");
 
 	auto pc = std::make_shared<rtc::PeerConnection>(config);
 	pc->onGatheringStateChange([this, offer_id, handler, pc](
