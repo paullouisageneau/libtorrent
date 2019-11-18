@@ -33,10 +33,6 @@ POSSIBILITY OF SUCH DAMAGE.
 #ifndef TORRENT_WEBSOCKET_TRACKER_CONNECTION_HPP_INCLUDED
 #define TORRENT_WEBSOCKET_TRACKER_CONNECTION_HPP_INCLUDED
 
-#include <memory>
-#include <queue>
-#include <tuple>
-
 #include "libtorrent/config.hpp"
 #include "libtorrent/error_code.hpp"
 #include "libtorrent/peer_id.hpp"
@@ -45,16 +41,25 @@ POSSIBILITY OF SUCH DAMAGE.
 
 #include <boost/beast/core/flat_buffer.hpp>
 
-namespace libtorrent {
+#include <memory>
+#include <queue>
+#include <tuple>
+#include <variant>
 
-class tracker_manager;
-struct peer_entry;
+namespace libtorrent {
 
 namespace aux {
 	class websocket_stream;
 	class rtc_offer;
 	class rtc_answer;
 }
+
+struct tracker_answer
+{
+	sha1_hash info_hash;
+	peer_id pid;
+	aux::rtc_answer answer;
+};
 
 class TORRENT_EXTRA_EXPORT websocket_tracker_connection
 	: public tracker_connection
@@ -71,7 +76,8 @@ public:
 	void start() override;
 	void close() override;
 
-	void queue_request(tracker_request const& req, std::weak_ptr<request_callback> cb);
+	void queue_request(tracker_request req, std::weak_ptr<request_callback> cb);
+	void queue_answer(tracker_answer ans);
 
 private:
 	std::shared_ptr<websocket_tracker_connection> shared_from_this()
@@ -81,8 +87,9 @@ private:
 	}
 
 	void send_pending();
-	void send_request(tracker_request const& req);
-	void send_answer(sha1_hash const& info_hash, peer_id const& pid, aux::rtc_answer const& answer);
+	void do_send(tracker_request const& req);
+	void do_send(tracker_answer const& ans);
+
 	void do_read();
 	void on_connect(error_code const& ec);
 	void on_timeout(error_code const& ec);
@@ -93,7 +100,8 @@ private:
 	std::shared_ptr<aux::websocket_stream> m_websocket;
 	boost::beast::flat_buffer m_read_buffer;
 
-	std::queue<std::tuple<tracker_request, std::weak_ptr<request_callback>>> m_pending_requests;
+	using tracker_message = std::variant<tracker_request, tracker_answer>;
+	std::queue<std::tuple<tracker_message, std::weak_ptr<request_callback>>> m_pending;
 	bool m_sending;
 };
 

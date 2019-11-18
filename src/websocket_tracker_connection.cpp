@@ -94,17 +94,28 @@ void websocket_tracker_connection::close()
 	// TODO
 }
 
-void websocket_tracker_connection::queue_request(tracker_request const& req, std::weak_ptr<request_callback> cb)
+void websocket_tracker_connection::queue_request(tracker_request req, std::weak_ptr<request_callback> cb)
 {
-	m_pending_requests.push({req, cb});
+	m_pending.emplace(tracker_message{std::move(req)}, cb);
+	if(m_websocket->is_open()) send_pending();
+}
+
+void websocket_tracker_connection::queue_answer(tracker_answer ans)
+{
+	m_pending.emplace(tracker_message{std::move(ans)}, std::shared_ptr<request_callback>());
 	if(m_websocket->is_open()) send_pending();
 }
 
 void websocket_tracker_connection::send_pending()
 {
-	if(!m_sending && !m_pending_requests.empty())
+	if(!m_sending && !m_pending.empty())
 	{
-		send_request(std::get<0>(m_pending_requests.front()));
+		m_sending = true;
+
+		std::visit([this](auto const& message) {
+			do_send(message);
+		},
+		std::get<0>(m_pending.front()));
 	}
 }
 
@@ -167,7 +178,7 @@ std::string to_latin1(std::string const& s) {
 	return r;
 }
 
-void websocket_tracker_connection::send_request(tracker_request const& req)
+void websocket_tracker_connection::do_send(tracker_request const& req)
 {
 	json payload;
 	payload["action"] = "announce";
@@ -198,7 +209,6 @@ void websocket_tracker_connection::send_request(tracker_request const& req)
 		payload["offers"].push_back(payload_offer);
 	}
 
-	m_sending = true;
 	std::string const data = payload.dump();
 
 	std::shared_ptr<request_callback> cb = requester();
@@ -212,16 +222,16 @@ void websocket_tracker_connection::send_request(tracker_request const& req)
      		, std::bind(&websocket_tracker_connection::on_write, me, _1, _2));
 }
 
-void websocket_tracker_connection::send_answer(sha1_hash const& info_hash, peer_id const& pid, aux::rtc_answer const& answer)
+void websocket_tracker_connection::do_send(tracker_answer const& ans)
 {
     json payload;
     payload["action"] = "announce";
-    payload["info_hash"] = from_latin1({info_hash.data(), std::size_t(info_hash.size())});
-    payload["offer_id"] = from_latin1({answer.offer_id.data(), answer.offer_id.size()});
-    payload["to_peer_id"] = from_latin1({answer.pid.data(), answer.pid.size()});
-    payload["peer_id"] =  from_latin1({pid.data(), pid.size()});
+    payload["info_hash"] = from_latin1({ans.info_hash.data(), std::size_t(ans.info_hash.size())});
+    payload["offer_id"] = from_latin1({ans.answer.offer_id.data(), ans.answer.offer_id.size()});
+    payload["to_peer_id"] = from_latin1({ans.answer.pid.data(), ans.answer.pid.size()});
+    payload["peer_id"] =  from_latin1({ans.pid.data(), ans.pid.size()});
     payload["answer"]["type"] = "answer";
-    payload["answer"]["sdp"] = answer.sdp;
+    payload["answer"]["sdp"] = ans.answer.sdp;
 
 	std::string const data = payload.dump();
 
@@ -233,7 +243,7 @@ void websocket_tracker_connection::send_answer(sha1_hash const& info_hash, peer_
 
 	std::shared_ptr<websocket_tracker_connection> me(shared_from_this());
 	m_websocket->async_write_some(boost::asio::const_buffer(data.data(), data.size())
-			, [](error_code const&, std::size_t) {});
+			, std::bind(&websocket_tracker_connection::on_write, me, _1, _2));
 }
 
 void websocket_tracker_connection::do_read()
@@ -297,7 +307,10 @@ void websocket_tracker_connection::on_read(error_code const& ec, std::size_t /* 
 
 		std::shared_ptr<websocket_tracker_connection> me(shared_from_this());
 		aux::rtc_offer offer{span<char const>(id), peer_id(pid), std::move(sdp)
-			, std::bind(&websocket_tracker_connection::send_answer, me, info_hash, _1, _2)};
+			, [this, info_hash, id, pid](peer_id const& local_pid, aux::rtc_answer const& answer) {
+				queue_answer({std::move(info_hash), std::move(local_pid), std::move(answer)});
+			}
+		};
 		cb->on_rtc_offer(offer);
 	}
 
@@ -332,12 +345,15 @@ void websocket_tracker_connection::on_write(error_code const& ec, std::size_t /*
 {
 	m_sending = false;
 
-	if(!m_pending_requests.empty())
+	if(!m_pending.empty())
 	{
 		// Update requester
-		m_requester = std::get<1>(m_pending_requests.front());
+		if(auto r = std::get<1>(m_pending.front()); r.lock())
+		{
+			m_requester = r;
+		}
 
-		m_pending_requests.pop();
+		m_pending.pop();
 	}
 
 	std::shared_ptr<request_callback> cb = requester();

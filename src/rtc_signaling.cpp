@@ -110,7 +110,7 @@ void rtc_signaling::generate_offers(int count, offers_handler handler)
 
 void rtc_signaling::process_offer(rtc_offer const& offer)
 {
-	debug_log("*** RTC signaling processing offer");
+	debug_log("*** RTC signaling processing remote offer");
 
 	auto& conn = create_connection(offer.id, [this, offer](std::string const& sdp) {
 		rtc_answer answer{offer.id, offer.pid, sdp};
@@ -128,23 +128,35 @@ void rtc_signaling::process_offer(rtc_offer const& offer)
 
 void rtc_signaling::process_answer(rtc_answer const& answer)
 {
-	debug_log("*** RTC signaling processing answer");
+	debug_log("*** RTC signaling processing remote answer");
 
 	auto it = m_connections.find(answer.offer_id);
 	if(it == m_connections.end())
 	{
-		// TODO: error
+		debug_log("*** OOPS: Remote RTC answer does not match an offer");
 		return;
 	}
 
 	connection& conn = it->second;
+	if(conn.pid)
+	{
+		debug_log("*** OOPS: Local RTC offer already got an answer");
+		return;
+	}
+
 	conn.pid = answer.pid;
 	conn.peer_connection->setRemoteDescription({answer.sdp, "answer"});
 }
 
 rtc_signaling::connection& rtc_signaling::create_connection(rtc_offer_id const& offer_id, description_handler handler)
 {
-	debug_log("*** RTC signaling creating connection for offer");
+	if(auto it = m_connections.find(offer_id); it != m_connections.end())
+	{
+		debug_log("*** WARNING: An RTC connection already exists for offer id");
+		return it->second;
+	}
+
+	debug_log("*** RTC signaling creating connection");
 
 	rtc::Configuration config;
 	config.iceServers.emplace_back("stun.l.google.com:19302");
@@ -228,13 +240,19 @@ void rtc_signaling::on_data_channel(error_code const& ec, rtc_offer_id offer_id,
 	auto it = m_connections.find(offer_id);
     if(it == m_connections.end())
     {
-        // TODO: error
+        debug_log("*** OOPS: RTC data channel does not match a connection");
         return;
     }
 
 	connection const& conn = it->second;
+    if(!conn.pid)
+    {
+        debug_log("*** OOPS: RTC data channel has no corresponding peer id");
+        return;
+    }
+
 	rtc_stream_init init{conn.peer_connection, dc};
-	m_rtc_stream_handler(conn.pid, init);
+	m_rtc_stream_handler(*conn.pid, init);
     m_connections.erase(it);
 }
 

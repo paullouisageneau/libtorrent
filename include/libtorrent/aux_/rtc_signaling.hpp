@@ -48,6 +48,7 @@ POSSIBILITY OF SUCH DAMAGE.
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <queue>
 #include <vector>
 
@@ -131,7 +132,7 @@ private:
 		std::shared_ptr<rtc::PeerConnection> peer_connection;
 		std::shared_ptr<rtc::DataChannel> data_channel;
 		std::chrono::steady_clock::time_point created;
-		peer_id pid;
+		std::optional<peer_id> pid;
 	};
 
 	rtc_offer_id generate_offer_id() const;
