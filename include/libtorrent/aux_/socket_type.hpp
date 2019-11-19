@@ -94,7 +94,7 @@ namespace aux {
 #endif
 
 #if TORRENT_USE_RTC
-	// returns true if this is an WebRTC socket
+	// returns true if this is a WebRTC socket
 	bool is_rtc(socket_type const& s);
 #endif
 
