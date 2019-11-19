@@ -162,6 +162,24 @@ rtc_signaling::connection& rtc_signaling::create_connection(rtc_offer_id const& 
 	config.iceServers.emplace_back("stun.l.google.com:19302");
 
 	auto pc = std::make_shared<rtc::PeerConnection>(config);
+	pc->onStateChange([this, pc](rtc::PeerConnection::State state) {
+		post(m_io_context, [this, state, pc]() {
+			switch (state) {
+			case rtc::PeerConnection::State::Connecting:
+				debug_log("*** RTC peer connection state: CONNECTING");
+				break;
+			case rtc::PeerConnection::State::Connected:
+				debug_log("*** RTC peer connection state: CONNECTED");
+				break;
+			case rtc::PeerConnection::State::Failed:
+				debug_log("*** RTC peer connection state: FAILED");
+				break;
+			default:
+				// Ignore
+				break;
+			}
+        });
+    });
 	pc->onGatheringStateChange([this, offer_id, handler, pc](
 			rtc::PeerConnection::GatheringState state)
 	{
