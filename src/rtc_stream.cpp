@@ -63,8 +63,8 @@ rtc_stream::~rtc_stream()
 
 void rtc_stream::on_message(error_code const& ec, std::vector<char> data)
 {
-	m_incoming.emplace(std::move(data));
 	m_incoming_size += data.size();
+	m_incoming.emplace(std::move(data));
 
 	// Fullfil pending read if any
 	if(m_read_handler) issue_read();
