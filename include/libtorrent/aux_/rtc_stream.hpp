@@ -44,6 +44,7 @@ POSSIBILITY OF SUCH DAMAGE.
 
 #include <functional>
 #include <memory>
+#include <queue>
 #include <vector>
 
 #ifndef BOOST_NO_EXCEPTIONS
@@ -162,7 +163,8 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 	template <class Handler>
 	void async_connect(endpoint_type const& endpoint, Handler const& handler)
 	{
-		handler(boost::asio::error::operation_not_supported);
+		// Dummy
+		handler(error_code{});
 	}
 
 	template <class Mutable_Buffers, class Handler>
@@ -311,7 +313,7 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 private:
 	void cancel_handlers(error_code const&);
 
-	void on_message(error_code const& ec, std::vector<char> const& data);
+	void on_message(error_code const& ec, std::vector<char> data);
 
 	std::function<void(error_code const&, std::size_t)> m_read_handler;
 	std::function<void(error_code const&, std::size_t)> m_write_handler;
@@ -321,6 +323,9 @@ private:
 	std::shared_ptr<rtc::DataChannel> m_data_channel;
 
 	close_reason_t m_close_reason = close_reason_t::none;
+
+	std::queue<std::vector<char>> m_incoming;
+	std::size_t m_incoming_size = 0;
 
 	struct iovec_t
 	{

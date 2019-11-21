@@ -61,9 +61,13 @@ rtc_stream::~rtc_stream()
 {
 }
 
-void rtc_stream::on_message(error_code const& ec, std::vector<char> const& data)
+void rtc_stream::on_message(error_code const& ec, std::vector<char> data)
 {
-	// TODO
+	m_incoming.emplace(std::move(data));
+	m_incoming_size += data.size();
+
+	// Fullfil pending read if any
+	if(m_read_handler) issue_read();
 }
 
 close_reason_t rtc_stream::get_close_reason()
@@ -76,13 +80,14 @@ void rtc_stream::close()
 	// TODO
 }
 
-bool rtc_stream::is_open() const {
+bool rtc_stream::is_open() const
+{
 	return !m_data_channel->isClosed();
 }
 
 std::size_t rtc_stream::available() const
 {
-	return 0; // TODO
+	return m_incoming_size;
 }
 
 rtc_stream::endpoint_type rtc_stream::remote_endpoint(error_code& ec) const
@@ -107,7 +112,7 @@ rtc_stream::endpoint_type rtc_stream::local_endpoint(error_code& ec) const
 
 int rtc_stream::read_buffer_size() const
 {
-    return 0; // TODO
+    return m_read_buffer_size;
 }
 
 void rtc_stream::add_read_buffer(void* buf, std::size_t const len)
@@ -116,7 +121,7 @@ void rtc_stream::add_read_buffer(void* buf, std::size_t const len)
     TORRENT_ASSERT(len > 0);
     TORRENT_ASSERT(buf);
     m_read_buffer.emplace_back(buf, len);
-    m_read_buffer_size += int(len);
+    m_read_buffer_size += len;
 }
 
 void rtc_stream::add_write_buffer(void const* buf, std::size_t const len)
@@ -125,43 +130,81 @@ void rtc_stream::add_write_buffer(void const* buf, std::size_t const len)
     TORRENT_ASSERT(len > 0);
     TORRENT_ASSERT(buf);
 
-#if TORRENT_USE_ASSERTS
-    int write_buffer_size = 0;
-    for (auto const& i : m_write_buffer)
-    {
-        TORRENT_ASSERT(std::numeric_limits<int>::max() - int(i.len) > write_buffer_size);
-        write_buffer_size += int(i.len);
-    }
-    TORRENT_ASSERT(m_write_buffer_size == write_buffer_size);
-#endif
-
     m_write_buffer.emplace_back(const_cast<void*>(buf), len);
-	m_write_buffer_size += int(len);
-
-#if TORRENT_USE_ASSERTS
-    write_buffer_size = 0;
-    for (auto const& i : m_write_buffer)
-    {
-        TORRENT_ASSERT(std::numeric_limits<int>::max() - int(i.len) > write_buffer_size);
-        write_buffer_size += int(i.len);
-    }
-    TORRENT_ASSERT(m_write_buffer_size == write_buffer_size);
-#endif
+	m_write_buffer_size += len;
 }
 
 void rtc_stream::issue_read()
 {
-	// TODO
+	TORRENT_ASSERT(m_read_handler);
+	TORRENT_ASSERT(m_read_buffer_size > 0);
+
+	std::size_t bytes_read = read_some(false);
+	if(bytes_read > 0)
+	{
+		error_code ec{};
+		post(m_io_context, std::bind(m_read_handler, ec, bytes_read));
+	}
 }
 
-std::size_t rtc_stream::read_some(bool const /*clear_buffers*/)
+std::size_t rtc_stream::read_some(bool const clear_buffers)
 {
-	return 0; // TODO
+	std::size_t ret = 0;
+	auto target = m_read_buffer.begin();
+	while(!m_incoming.empty() && target != m_read_buffer.end())
+	{
+		auto& message = m_incoming.front();
+		std::size_t to_copy = std::min(message.size(), target->len);
+		std::memcpy(target->buf, message.data(), to_copy);
+		ret += to_copy;
+		target->buf = static_cast<char*>(target->buf) + to_copy;
+		TORRENT_ASSERT(target->len >= to_copy);
+		target->len -= to_copy;
+		TORRENT_ASSERT(m_read_buffer_size >= to_copy);
+		m_read_buffer_size -= to_copy;
+
+		// Move to next target
+		if (target->len == 0) target = m_read_buffer.erase(target);
+
+		if (to_copy == message.size())
+		{
+			// Consumed entire message
+			m_incoming.pop();
+		}
+		else {
+			message.erase(message.begin(), message.begin() + to_copy);
+		}
+
+		TORRENT_ASSERT(m_incoming_size >= to_copy);
+		m_incoming_size -= to_copy;
+	}
+
+	if (clear_buffers)
+	{
+		m_read_buffer_size = 0;
+		m_read_buffer.clear();
+	}
+	return ret;
 }
 
 void rtc_stream::issue_write()
 {
-	// TODO
+	TORRENT_ASSERT(m_write_handler);
+	TORRENT_ASSERT(m_write_buffer_size > 0);
+
+	std::size_t bytes_written = 0;
+	auto target = m_write_buffer.begin();
+	while(target != m_write_buffer.end())
+	{
+		m_data_channel->send(static_cast<rtc::byte const*>(target->buf), target->len);
+		bytes_written += target->len;
+		TORRENT_ASSERT(m_write_buffer_size >= target->len);
+		m_write_buffer_size -= target->len;
+		target = m_write_buffer.erase(target);
+	}
+
+	error_code ec{};
+	post(m_io_context, std::bind(m_write_handler, ec, bytes_written));
 }
 
 }
