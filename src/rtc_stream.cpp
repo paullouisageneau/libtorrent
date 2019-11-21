@@ -146,6 +146,9 @@ void rtc_stream::issue_read()
 		error_code ec{};
 		post(m_io_context, std::bind(m_read_handler, ec, bytes_read));
 		m_read_handler = nullptr;
+
+		m_read_buffer_size = 0;
+        m_read_buffer.clear();
 	}
 }
 
