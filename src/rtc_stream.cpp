@@ -59,6 +59,7 @@ rtc_stream::rtc_stream(io_context& ioc, rtc_stream_init const& init)
 
 rtc_stream::~rtc_stream()
 {
+	close();
 }
 
 void rtc_stream::on_message(error_code const& ec, std::vector<char> data)
@@ -77,7 +78,7 @@ close_reason_t rtc_stream::get_close_reason()
 
 void rtc_stream::close()
 {
-	// TODO
+	m_data_channel->close();
 }
 
 bool rtc_stream::is_open() const
