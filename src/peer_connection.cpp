@@ -6254,7 +6254,11 @@ namespace {
 			return;
 		}
 
-		if (m_remote == m_socket.local_endpoint(ec))
+		if (m_remote == m_socket.local_endpoint(ec)
+#if TORRENT_USE_RTC
+			&& !is_rtc(m_socket)
+#endif
+		)
 		{
 			disconnect(errors::self_connection, operation_t::bittorrent, failure);
 			return;

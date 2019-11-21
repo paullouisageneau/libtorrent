@@ -2806,7 +2806,7 @@ bool is_downloading_state(int const st)
 #if TORRENT_USE_RTC
 		// offers
 		if (req.num_want > 0) {
-			const int max_num_offers = 1; // TODO
+			const int max_num_offers = 10;
 			m_rtc_signaling->generate_offers(std::min(req.num_want, max_num_offers)
 					, [self = shared_from_this(), e, req_ = std::move(req)](error_code const& ec, std::vector<aux::rtc_offer> const& offers) {
 				tracker_request req(req_);
@@ -5711,7 +5711,7 @@ bool is_downloading_state(int const st)
 		s->instantiate<aux::rtc_stream>(m_ses.get_context(), &stream_init);
 
 		torrent_state st = get_peer_list_state();
-		torrent_peer* peerinfo = m_peer_list->add_rtc_peer(pid.to_string(), peer_info::incoming, {}, &st);
+		torrent_peer* peerinfo = m_peer_list->add_rtc_peer(pid.to_string(), peer_source_flags_t{}, {}, &st);
 
 		peer_id const our_pid = aux::generate_peer_id(settings());
 		peer_connection_args pack{
