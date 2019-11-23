@@ -68,7 +68,7 @@ void rtc_stream::on_message(error_code const& ec, std::vector<char> data)
 {
 	if(ec)
 	{
-		// TODO
+		// Ignore
 		return;
 	}
 
@@ -81,12 +81,39 @@ void rtc_stream::on_message(error_code const& ec, std::vector<char> data)
 
 close_reason_t rtc_stream::get_close_reason()
 {
-	return m_close_reason;
+	return close_reason_t::none;
 }
 
 void rtc_stream::close()
 {
+	m_data_channel->onMessage([](std::variant<rtc::binary, rtc::string> const&) {});
 	m_data_channel->close();
+
+	cancel_handlers(boost::asio::error::operation_aborted);
+}
+
+void rtc_stream::cancel_handlers(error_code const& ec)
+{
+	TORRENT_ASSERT(ec);
+
+	if(m_read_handler) m_read_handler(ec, 0);
+	if(m_write_handler) m_write_handler(ec, 0);
+
+	m_read_handler = nullptr;
+	m_read_buffer.clear();
+	m_read_buffer_size = 0;
+
+	m_write_handler = nullptr;
+	m_write_buffer.clear();
+	m_write_buffer_size = 0;
+}
+
+bool rtc_stream::ensure_open()
+{
+	if(is_open()) return true;
+
+    cancel_handlers(boost::asio::error::not_connected);
+    return false;
 }
 
 bool rtc_stream::is_open() const
@@ -161,6 +188,7 @@ void rtc_stream::add_read_buffer(void* buf, std::size_t const len)
     TORRENT_ASSERT(len < INT_MAX);
     TORRENT_ASSERT(len > 0);
     TORRENT_ASSERT(buf);
+
     m_read_buffer.emplace_back(buf, len);
     m_read_buffer_size += len;
 }
@@ -180,6 +208,8 @@ void rtc_stream::issue_read()
 	TORRENT_ASSERT(m_read_handler);
 	TORRENT_ASSERT(m_read_buffer_size > 0);
 
+	if(!ensure_open()) return;
+
 	std::size_t bytes_read = read_some(false);
 	if(bytes_read > 0)
 	{
@@ -193,6 +223,8 @@ void rtc_stream::issue_read()
 
 std::size_t rtc_stream::read_some(bool const clear_buffers)
 {
+	if(!ensure_open()) return 0;
+
 	std::size_t ret = 0;
 	auto target = m_read_buffer.begin();
 	while(!m_incoming.empty() && target != m_read_buffer.end())
@@ -235,6 +267,8 @@ void rtc_stream::issue_write()
 {
 	TORRENT_ASSERT(m_write_handler);
 	TORRENT_ASSERT(m_write_buffer_size > 0);
+
+	if(!ensure_open()) return;
 
 	std::size_t bytes_written = 0;
 	auto target = m_write_buffer.begin();

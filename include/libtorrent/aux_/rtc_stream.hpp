@@ -161,7 +161,7 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 	std::size_t available(error_code& /*ec*/) const { return available(); }
 
 	template <class Handler>
-	void async_connect(endpoint_type const& endpoint, Handler const& handler)
+	void async_connect(endpoint_type const& /*endpoint*/, Handler const& handler)
 	{
 		// Dummy
 		handler(error_code{});
@@ -311,9 +311,9 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 	}
 
 private:
-	void cancel_handlers(error_code const&);
-
 	void on_message(error_code const& ec, std::vector<char> data);
+	void cancel_handlers(error_code const&);
+	bool ensure_open();
 
 	std::function<void(error_code const&, std::size_t)> m_read_handler;
 	std::function<void(error_code const&, std::size_t)> m_write_handler;
@@ -321,8 +321,6 @@ private:
 	io_context& m_io_context;
 	std::shared_ptr<rtc::PeerConnection> m_peer_connection;
 	std::shared_ptr<rtc::DataChannel> m_data_channel;
-
-	close_reason_t m_close_reason = close_reason_t::none;
 
 	std::queue<std::vector<char>> m_incoming;
 	std::size_t m_incoming_size = 0;

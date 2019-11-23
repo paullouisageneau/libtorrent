@@ -212,17 +212,9 @@ void rtc_signaling::on_generated_offer(error_code const& ec, rtc_offer offer)
 	debug_log("*** RTC signaling generated offer");
 
 	while(!m_offer_batches.empty() && m_offer_batches.front().is_complete())
-	{
 		m_offer_batches.pop();
-	}
 
-	if(m_offer_batches.empty())
-	{
-		// TODO: should not happen
-		return;
-	}
-
-	m_offer_batches.front().add(std::forward<rtc_offer>(offer));
+	if(!m_offer_batches.empty()) m_offer_batches.front().add(ec, std::forward<rtc_offer>(offer));
 }
 
 void rtc_signaling::on_generated_answer(error_code const& ec, rtc_answer answer, rtc_offer offer)
@@ -284,14 +276,13 @@ rtc_signaling::offer_batch::offer_batch(int count, rtc_signaling::offers_handler
 	}
 }
 
-void rtc_signaling::offer_batch::add(rtc_offer &&offer)
+void rtc_signaling::offer_batch::add(error_code const& ec, rtc_offer &&offer)
 {
-	m_offers.push_back(std::forward<rtc_offer>(offer));
+	if(!ec) m_offers.push_back(std::forward<rtc_offer>(offer));
+	else --m_count;
 
 	if(is_complete())
-	{
 		m_handler(boost::system::error_code{}, m_offers);
-	}
 }
 
 bool rtc_signaling::offer_batch::is_complete() const

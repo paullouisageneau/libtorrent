@@ -153,12 +153,12 @@ private:
 	{
 	public:
 		offer_batch(int count, offers_handler handler);
-		void add(rtc_offer &&offer);
+		void add(error_code const& ec, rtc_offer &&offer);
 		bool is_complete() const;
 
 	private:
-		const int m_count;
-		const offers_handler m_handler;
+		int m_count;
+		offers_handler const m_handler;
 		std::vector<rtc_offer> m_offers;
 	};
 
