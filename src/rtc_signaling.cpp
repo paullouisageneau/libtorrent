@@ -40,8 +40,15 @@ POSSIBILITY OF SUCH DAMAGE.
 
 #include <cstdarg>
 
+namespace {
+	template <class T> std::weak_ptr<T> make_weak_ptr(std::shared_ptr<T> ptr) { return ptr; }
+}
+
 namespace libtorrent {
 namespace aux {
+
+long const  RTC_CONNECTION_TIMEOUT = 60000; // msecs
+char const* RTC_STUN_SERVER = "stun.l.google.com:19302";
 
 rtc_signaling::rtc_signaling(io_context& ioc, torrent* t, rtc_stream_handler handler)
 	: m_io_context(ioc)
@@ -87,17 +94,20 @@ void rtc_signaling::generate_offers(int count, offers_handler handler)
 			rtc_offer offer{std::move(offer_id), std::move(pid), sdp, {}};
 			post(m_io_context, std::bind(&rtc_signaling::on_generated_offer
 				, this
-                , boost::system::error_code{}
+                , error_code{}
                 , offer
             ));
 		});
 
 		auto dc = conn.peer_connection->createDataChannel("webtorrent");
-		dc->onOpen([this, offer_id, dc]() {
+		dc->onOpen([this, offer_id, wdc = make_weak_ptr(dc)]() {
+			auto dc = wdc.lock();
+			if(!dc) return;
+
 			// Warning: this is called from another thread
 			post(m_io_context, std::bind(&rtc_signaling::on_data_channel
 				, this
-				, boost::system::error_code{}
+				, error_code{}
 				, offer_id
 				, dc
 			));
@@ -116,7 +126,7 @@ void rtc_signaling::process_offer(rtc_offer const& offer)
 		rtc_answer answer{offer.id, offer.pid, sdp};
         post(m_io_context, std::bind(&rtc_signaling::on_generated_answer
 			, this
-            , boost::system::error_code{}
+            , error_code{}
             , answer
             , offer
         ));
@@ -128,14 +138,10 @@ void rtc_signaling::process_offer(rtc_offer const& offer)
 
 void rtc_signaling::process_answer(rtc_answer const& answer)
 {
-	debug_log("*** RTC signaling processing remote answer");
-
 	auto it = m_connections.find(answer.offer_id);
-	if(it == m_connections.end())
-	{
-		debug_log("*** OOPS: Remote RTC answer does not match an offer");
-		return;
-	}
+	if(it == m_connections.end()) return;
+
+	debug_log("*** RTC signaling processing remote answer");
 
 	connection& conn = it->second;
 	if(conn.pid)
@@ -151,58 +157,63 @@ void rtc_signaling::process_answer(rtc_answer const& answer)
 rtc_signaling::connection& rtc_signaling::create_connection(rtc_offer_id const& offer_id, description_handler handler)
 {
 	if(auto it = m_connections.find(offer_id); it != m_connections.end())
-	{
-		debug_log("*** WARNING: An RTC connection already exists for offer id");
 		return it->second;
-	}
 
 	debug_log("*** RTC signaling creating connection");
 
 	rtc::Configuration config;
-	config.iceServers.emplace_back("stun.l.google.com:19302");
+	config.iceServers.emplace_back(RTC_STUN_SERVER);
 
 	auto pc = std::make_shared<rtc::PeerConnection>(config);
-	pc->onStateChange([this, pc](rtc::PeerConnection::State state) {
-		post(m_io_context, [this, state, pc]() {
-			switch (state) {
-			case rtc::PeerConnection::State::Connecting:
-				debug_log("*** RTC peer connection state: CONNECTING");
-				break;
-			case rtc::PeerConnection::State::Connected:
-				debug_log("*** RTC peer connection state: CONNECTED");
-				break;
-			case rtc::PeerConnection::State::Failed:
-				debug_log("*** RTC peer connection state: FAILED");
-				break;
-			default:
-				// Ignore
-				break;
-			}
-        });
+	pc->onStateChange([this, offer_id](rtc::PeerConnection::State state)
+	{
+		if(state == rtc::PeerConnection::State::Failed)
+		{
+			post(m_io_context, std::bind(&rtc_signaling::on_data_channel
+				, this
+				, boost::asio::error::connection_refused
+				, offer_id
+				, nullptr
+			));
+		}
     });
-	pc->onGatheringStateChange([this, offer_id, handler, pc](
+
+	pc->onGatheringStateChange([this, offer_id, handler, wpc = make_weak_ptr(pc)](
 			rtc::PeerConnection::GatheringState state)
 	{
+		auto pc = wpc.lock();
+		if(!pc) return;
+
 		// Warning: this is called from another thread
 		if(state == rtc::PeerConnection::GatheringState::Complete)
 		{
-			post(m_io_context, std::bind(handler, *pc->localDescription()));
+			auto description = *pc->localDescription();
+			post(m_io_context, std::bind(handler, description));
 		}
 	});
+
 	pc->onDataChannel([this, offer_id](
 				std::shared_ptr<rtc::DataChannel> dc)
 	{
         // Warning: this is called from another thread
 		post(m_io_context, std::bind(&rtc_signaling::on_data_channel
         	, this
-        	, boost::system::error_code{}
+        	, error_code{}
         	, offer_id
         	, dc
         ));
     });
 
-	connection conn;
+	connection conn(m_io_context);
 	conn.peer_connection = pc;
+	conn.timer.expires_from_now(boost::posix_time::milliseconds(RTC_CONNECTION_TIMEOUT));
+	conn.timer.async_wait(std::bind(&rtc_signaling::on_data_channel
+		, this
+        , boost::asio::error::timed_out
+		, offer_id
+        , nullptr
+    ));
+
 	auto it = m_connections.emplace(offer_id, std::move(conn)).first;
 	return it->second;
 }
@@ -212,7 +223,9 @@ void rtc_signaling::on_generated_offer(error_code const& ec, rtc_offer offer)
 	debug_log("*** RTC signaling generated offer");
 
 	while(!m_offer_batches.empty() && m_offer_batches.front().is_complete())
+	{
 		m_offer_batches.pop();
+	}
 
 	if(!m_offer_batches.empty()) m_offer_batches.front().add(ec, std::forward<rtc_offer>(offer));
 }
@@ -221,48 +234,39 @@ void rtc_signaling::on_generated_answer(error_code const& ec, rtc_answer answer,
 {
     if(ec)
     {
-        // TODO
+        // Ignore
         return;
     }
 
 	debug_log("*** RTC signaling generated answer");
 
-	if(!offer.answer_callback)
-	{
-		debug_log("*** OOPS: RTC offer has no answer callback");
-		return;
-	}
+	TORRENT_ASSERT(offer.answer_callback);
 
 	peer_id pid = aux::generate_peer_id(m_torrent->settings());
 	offer.answer_callback(pid, answer);
 }
 
-void rtc_signaling::on_data_channel(error_code const& ec, rtc_offer_id offer_id, std::shared_ptr<rtc::DataChannel> dc)
+void rtc_signaling::on_data_channel(error_code const& ec
+		, rtc_offer_id offer_id
+		, std::shared_ptr<rtc::DataChannel> dc)
 {
+	auto it = m_connections.find(offer_id);
+    if(it == m_connections.end()) return;
+
 	if(ec)
 	{
-		// TODO
+		debug_log("*** RTC negociation failed");
+		m_connections.erase(it);
 		return;
 	}
 
-	debug_log("*** RTC signaling data channel open");
+	debug_log("*** RTC data channel open");
 
-	auto it = m_connections.find(offer_id);
-    if(it == m_connections.end())
-    {
-        debug_log("*** OOPS: RTC data channel does not match a connection");
-        return;
-    }
+	TORRENT_ASSERT(dc);
 
 	connection const& conn = it->second;
-    if(!conn.pid)
-    {
-        debug_log("*** OOPS: RTC data channel has no corresponding peer id");
-        return;
-    }
-
 	rtc_stream_init init{conn.peer_connection, dc};
-	m_rtc_stream_handler(*conn.pid, init);
+	m_rtc_stream_handler(conn.pid.value_or(peer_id{}), init);
     m_connections.erase(it);
 }
 
@@ -270,10 +274,7 @@ rtc_signaling::offer_batch::offer_batch(int count, rtc_signaling::offers_handler
 	: m_count(count)
 	, m_handler(handler)
 {
-	if(m_count == 0)
-	{
-		m_handler(boost::system::error_code{}, {});
-	}
+	if(m_count == 0) m_handler(error_code{}, {});
 }
 
 void rtc_signaling::offer_batch::add(error_code const& ec, rtc_offer &&offer)
@@ -281,8 +282,7 @@ void rtc_signaling::offer_batch::add(error_code const& ec, rtc_offer &&offer)
 	if(!ec) m_offers.push_back(std::forward<rtc_offer>(offer));
 	else --m_count;
 
-	if(is_complete())
-		m_handler(boost::system::error_code{}, m_offers);
+	if(is_complete()) m_handler(error_code{}, m_offers);
 }
 
 bool rtc_signaling::offer_batch::is_complete() const

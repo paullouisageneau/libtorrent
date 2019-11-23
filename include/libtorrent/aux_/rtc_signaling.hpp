@@ -43,8 +43,8 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/span.hpp"
 #include "libtorrent/time.hpp"
 
+#include <boost/asio/deadline_timer.hpp>
 #include <boost/functional/hash.hpp>
-#include <boost/system/error_code.hpp>
 
 #include <functional>
 #include <memory>
@@ -127,12 +127,12 @@ public:
 private:
 	struct connection
 	{
-		connection() : created(std::chrono::steady_clock::now()) {}
+		connection(io_context& ioc) : timer(ioc) {}
 
 		std::shared_ptr<rtc::PeerConnection> peer_connection;
 		std::shared_ptr<rtc::DataChannel> data_channel;
-		std::chrono::steady_clock::time_point created;
 		std::optional<peer_id> pid;
+		boost::asio::deadline_timer timer;
 	};
 
 	rtc_offer_id generate_offer_id() const;
@@ -153,6 +153,7 @@ private:
 	{
 	public:
 		offer_batch(int count, offers_handler handler);
+
 		void add(error_code const& ec, rtc_offer &&offer);
 		bool is_complete() const;
 
