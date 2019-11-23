@@ -39,6 +39,8 @@ POSSIBILITY OF SUCH DAMAGE.
 namespace libtorrent {
 namespace aux {
 
+namespace ip = boost::asio::ip;
+
 rtc_stream::rtc_stream(io_context& ioc, rtc_stream_init const& init)
 	: m_io_context(ioc)
 	, m_peer_connection(init.peer_connection)
@@ -64,10 +66,16 @@ rtc_stream::~rtc_stream()
 
 void rtc_stream::on_message(error_code const& ec, std::vector<char> data)
 {
+	if(ec)
+	{
+		// TODO
+		return;
+	}
+
 	m_incoming_size += data.size();
 	m_incoming.emplace(std::move(data));
 
-	// Fullfil pending read if any
+	// Fulfil pending read if any
 	if(m_read_handler) issue_read();
 }
 
@@ -93,22 +101,54 @@ std::size_t rtc_stream::available() const
 
 rtc_stream::endpoint_type rtc_stream::remote_endpoint(error_code& ec) const
 {
-    if (!m_data_channel)
+    if (!is_open())
     {
         ec = boost::asio::error::not_connected;
         return endpoint_type();
     }
-    return endpoint_type(); // TODO
+
+	auto addr = m_peer_connection->remoteAddress();
+	if(!addr)
+	{
+		ec = boost::asio::error::operation_not_supported;
+		return endpoint_type();
+	}
+
+	size_t pos = addr->find_last_of(':');
+	if(pos == std::string::npos)
+	{
+		ec = boost::asio::error::address_family_not_supported;
+		return endpoint_type();
+	}
+
+	return endpoint_type(ip::make_address(addr->substr(0, pos), ec)
+			, std::stoul(addr->substr(pos+1)));
 }
 
 rtc_stream::endpoint_type rtc_stream::local_endpoint(error_code& ec) const
 {
-    if (!m_data_channel)
+	if (!is_open())
     {
         ec = boost::asio::error::not_connected;
         return endpoint_type();
     }
-    return endpoint_type(); // TODO
+
+	auto addr = m_peer_connection->localAddress();
+	if(!addr)
+	{
+		ec = boost::asio::error::operation_not_supported;
+		return endpoint_type();
+	}
+
+	size_t pos = addr->find_last_of(':');
+	if(pos == std::string::npos)
+	{
+		ec = boost::asio::error::address_family_not_supported;
+		return endpoint_type();
+	}
+
+	return endpoint_type(ip::make_address(addr->substr(0, pos), ec)
+			, std::stoul(addr->substr(pos+1)));
 }
 
 int rtc_stream::read_buffer_size() const
@@ -143,8 +183,7 @@ void rtc_stream::issue_read()
 	std::size_t bytes_read = read_some(false);
 	if(bytes_read > 0)
 	{
-		error_code ec{};
-		post(m_io_context, std::bind(m_read_handler, ec, bytes_read));
+		post(m_io_context, std::bind(m_read_handler, error_code{}, bytes_read));
 		m_read_handler = nullptr;
 
 		m_read_buffer_size = 0;
@@ -208,8 +247,7 @@ void rtc_stream::issue_write()
 		target = m_write_buffer.erase(target);
 	}
 
-	error_code ec{};
-	post(m_io_context, std::bind(m_write_handler, ec, bytes_written));
+	post(m_io_context, std::bind(m_write_handler, error_code{}, bytes_written));
 	m_write_handler = nullptr;
 }
 

@@ -5713,6 +5713,9 @@ bool is_downloading_state(int const st)
 		torrent_state st = get_peer_list_state();
 		torrent_peer* peerinfo = m_peer_list->add_rtc_peer(pid.to_string(), peer_source_flags_t{}, {}, &st);
 
+		error_code ec;
+		auto remote_endpoint = s->remote_endpoint(ec);
+
 		peer_id const our_pid = aux::generate_peer_id(settings());
 		peer_connection_args pack{
 			&m_ses
@@ -5722,7 +5725,7 @@ bool is_downloading_state(int const st)
 			, &m_ses.get_context()
 			, shared_from_this()
 			, s
-			, tcp::endpoint{} // TODO
+			, remote_endpoint
 			, peerinfo
 			, our_pid
 		};
