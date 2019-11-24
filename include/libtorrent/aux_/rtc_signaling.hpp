@@ -102,7 +102,7 @@ class TORRENT_EXTRA_EXPORT rtc_signaling
 {
 public:
 	using offers_handler = std::function<void(error_code const&, std::vector<rtc_offer> const&)>;
-	using description_handler = std::function<void(std::string const& description)>;
+	using description_handler = std::function<void(error_code const&, std::string const& description)>;
 	using rtc_stream_handler = std::function<void(peer_id const &pid, rtc_stream_init&)>;
 
 	explicit rtc_signaling(io_context& ioc, torrent* t, rtc_stream_handler handler);

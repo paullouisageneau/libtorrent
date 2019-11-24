@@ -60,7 +60,7 @@ rtc_signaling::rtc_signaling(io_context& ioc, torrent* t, rtc_stream_handler han
 
 rtc_signaling::~rtc_signaling()
 {
-	// TODO
+
 }
 
 alert_manager& rtc_signaling::alerts() const
@@ -90,11 +90,12 @@ void rtc_signaling::generate_offers(int count, offers_handler handler)
 		rtc_offer_id offer_id = generate_offer_id();
 		peer_id pid = aux::generate_peer_id(m_torrent->settings());
 
-		auto& conn = create_connection(offer_id, [this, offer_id, pid](std::string const& sdp) {
+		auto& conn = create_connection(offer_id, [this, offer_id, pid](error_code const& ec
+					, std::string const& sdp) {
 			rtc_offer offer{std::move(offer_id), std::move(pid), sdp, {}};
 			post(m_io_context, std::bind(&rtc_signaling::on_generated_offer
 				, this
-                , error_code{}
+                , ec
                 , offer
             ));
 		});
@@ -122,11 +123,11 @@ void rtc_signaling::process_offer(rtc_offer const& offer)
 {
 	debug_log("*** RTC signaling processing remote offer");
 
-	auto& conn = create_connection(offer.id, [this, offer](std::string const& sdp) {
+	auto& conn = create_connection(offer.id, [this, offer](error_code const& ec, std::string const& sdp) {
 		rtc_answer answer{offer.id, offer.pid, sdp};
         post(m_io_context, std::bind(&rtc_signaling::on_generated_answer
 			, this
-            , error_code{}
+            , ec
             , answer
             , offer
         ));
@@ -188,7 +189,7 @@ rtc_signaling::connection& rtc_signaling::create_connection(rtc_offer_id const& 
 		if(state == rtc::PeerConnection::GatheringState::Complete)
 		{
 			auto description = *pc->localDescription();
-			post(m_io_context, std::bind(handler, description));
+			post(m_io_context, std::bind(handler, error_code{}, description));
 		}
 	});
 

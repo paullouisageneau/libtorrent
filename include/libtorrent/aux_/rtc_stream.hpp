@@ -247,7 +247,7 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 	std::size_t write_some(Const_Buffers const& /* buffers */, error_code& /* ec */)
 	{
 		TORRENT_ASSERT(false && "not implemented!");
-		// TODO: implement blocking write. Low priority since it's not used (yet)
+		// TODO: implement blocking write (same as utp_stream)
 		return 0;
 	}
 

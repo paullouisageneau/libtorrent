@@ -294,8 +294,9 @@ namespace libtorrent {
 #ifndef TORRENT_DISABLE_LOGGING
 			cb->debug_log("*** WEBSOCKET_TRACKER [ url: %s]", req.url.c_str());
 #endif
-			const int max_num_offers = 10;
-			cb->generate_rtc_offers(std::min(req.num_want, max_num_offers)
+			const int max_offers = 10;
+			req.num_want = std::min(req.num_want, max_offers);
+			cb->generate_rtc_offers(req.num_want
 				, [this, &ios, req = std::move(req), c](error_code const& ec
 					, std::vector<aux::rtc_offer> const& offers) mutable
 			{
