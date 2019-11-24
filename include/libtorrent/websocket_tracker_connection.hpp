@@ -72,6 +72,7 @@ public:
 		, tracker_manager& man
 		, tracker_request const& req
 		, std::weak_ptr<request_callback> cb);
+	~websocket_tracker_connection();
 
 	void start() override;
 	void close() override;

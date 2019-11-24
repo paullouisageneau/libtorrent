@@ -55,39 +55,36 @@ namespace aux {
 
 websocket_stream::websocket_stream(io_context& ios
         , resolver_interface& resolver
-#ifdef TORRENT_USE_OPENSSL
         , ssl::context* ssl_ctx
-#endif
         )
     : m_io_service(ios)
-    , m_stream(ios, *ssl_ctx)
     , m_resolver(resolver)
+    , m_stream(ios, *ssl_ctx)
 	, m_open(false)
 	, m_connecting(false)
 {
 
 }
 
-close_reason_t websocket_stream::get_close_reason()
+websocket_stream::~websocket_stream()
 {
-	return m_close_reason;
+	close();
 }
 
 void websocket_stream::close()
 {
-	// TODO
 	m_open = false;
+	m_connecting = false;
+	m_stream.close(websocket::close_code::none);
 }
-/*
-std::size_t websocket_stream::available() const
-{
-	// TODO
-	return 0;
-}
-*/
-websocket_stream::~websocket_stream()
-{
 
+close_reason_t websocket_stream::get_close_reason()
+{
+	return close_reason_t::none;
+}
+
+void websocket_stream::set_user_agent(std::string user_agent) {
+	m_user_agent = std::move(user_agent);
 }
 
 void websocket_stream::do_connect(std::string url) {
@@ -101,8 +98,6 @@ void websocket_stream::do_connect(std::string url) {
 		m_connect_handler(boost::asio::error::already_started);
         return;
     }
-	m_connecting = true;
-
 	m_url = std::move(url);
 
 	std::string protocol, hostname;
@@ -110,40 +105,38 @@ void websocket_stream::do_connect(std::string url) {
 	error_code ec;
 	std::tie(protocol, std::ignore, hostname,  port, m_target) = parse_url_components(m_url, ec);
 	if(ec) {
-		// TODO
+		m_connect_handler(ec);
 		return;
 	}
 	if(protocol != "wss") {
-		// TODO
+		m_connect_handler(boost::asio::error::no_protocol_option);
 		return;
 	}
 	if(port <= 0) port = 443;
 	if(m_target.empty()) m_target = "/";
 
+	m_connecting = true;
 	do_resolve(hostname, port);
 }
 
 void websocket_stream::do_resolve(std::string hostname, std::uint16_t port)
 {
 	m_hostname = std::move(hostname);
-	m_port = port;
-
-	std::shared_ptr<websocket_stream> me(shared_from_this());
-	resolver_flags flags = resolver_interface::abort_on_shutdown;
+	m_port = std::move(port);
 
 	ADD_OUTSTANDING_ASYNC("websocket_stream::on_resolve");
 	m_resolver.async_resolve(m_hostname
-		, flags
-        , std::bind(&websocket_stream::on_resolve, me, _1, _2));
+		, resolver_interface::abort_on_shutdown
+        , std::bind(&websocket_stream::on_resolve, shared_from_this(), _1, _2));
 }
 
-void websocket_stream::on_resolve(error_code const& e, std::vector<address> const& addresses)
+void websocket_stream::on_resolve(error_code const& ec, std::vector<address> const& addresses)
 {
 	COMPLETE_ASYNC("websocket_stream::on_resolve");
-    if (e)
+    if (ec)
     {
     	m_connecting = false;
-    	m_connect_handler(e);
+    	m_connect_handler(ec);
         return;
     }
 
@@ -160,22 +153,20 @@ void websocket_stream::do_tcp_connect(std::vector<tcp::endpoint> endpoints)
 {
 	m_endpoints = std::move(endpoints);
 
-	std::shared_ptr<websocket_stream> me(shared_from_this());
-
 	ADD_OUTSTANDING_ASYNC("websocket_stream::on_tcp_connect");
 	boost::asio::async_connect(m_stream.next_layer().next_layer()
 		, m_endpoints.rbegin()
 		, m_endpoints.rend()
-		, std::bind(&websocket_stream::on_tcp_connect, me, _1));
+		, std::bind(&websocket_stream::on_tcp_connect, shared_from_this(), _1));
 }
 
-void websocket_stream::on_tcp_connect(error_code const& e)
+void websocket_stream::on_tcp_connect(error_code const& ec)
 {
 	COMPLETE_ASYNC("websocket_stream::on_tcp_connect");
-	if (e)
+	if (ec)
     {
     	m_connecting = false;
-        m_connect_handler(e);
+        m_connect_handler(ec);
         return;
     }
 
@@ -184,31 +175,29 @@ void websocket_stream::on_tcp_connect(error_code const& e)
 
 void websocket_stream::do_tls_handshake()
 {
-	std::shared_ptr<websocket_stream> me(shared_from_this());
-
 	auto& ssl_stream = m_stream.next_layer();
 
     // Set Server Name Indication
     if (!SSL_set_tlsext_host_name(ssl_stream.native_handle(), m_hostname.c_str()))
     {
     	m_connecting = false;
-        error_code e{static_cast<int>(ERR_get_error()), boost::asio::error::get_ssl_category()};
-        m_connect_handler(e);
+        error_code ec{static_cast<int>(ERR_get_error()), boost::asio::error::get_ssl_category()};
+        m_connect_handler(ec);
         return;
     }
 
 	ADD_OUTSTANDING_ASYNC("websocket_stream::on_tls_handshake");
-	ssl_stream.async_handshake(ssl::stream_base::client,
-			std::bind(&websocket_stream::on_tls_handshake, me, _1));
+	ssl_stream.async_handshake(ssl::stream_base::client
+			, std::bind(&websocket_stream::on_tls_handshake, shared_from_this(), _1));
 }
 
-void websocket_stream::on_tls_handshake(error_code const& e)
+void websocket_stream::on_tls_handshake(error_code const& ec)
 {
 	COMPLETE_ASYNC("websocket_stream::on_tls_handshake");
-	if (e)
+	if (ec)
     {
     	m_connecting = false;
-        m_connect_handler(e);
+        m_connect_handler(ec);
         return;
     }
 
@@ -217,9 +206,12 @@ void websocket_stream::on_tls_handshake(error_code const& e)
 
 void websocket_stream::do_handshake()
 {
-	m_stream.set_option(websocket::stream_base::decorator([](websocket::request_type &req) {
-		req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
-    }));
+	m_stream.set_option(websocket::stream_base::decorator(
+			[user_agent = m_user_agent](websocket::request_type& req)
+			{
+				if(!user_agent.empty()) req.set(http::field::user_agent, user_agent);
+			}
+		));
 
     ADD_OUTSTANDING_ASYNC("websocket_stream::on_handshake");
     m_stream.async_handshake(m_hostname
@@ -227,33 +219,39 @@ void websocket_stream::do_handshake()
         , std::bind(&websocket_stream::on_handshake, shared_from_this(), _1));
 }
 
-void websocket_stream::on_handshake(error_code const& e)
+void websocket_stream::on_handshake(error_code const& ec)
 {
 	COMPLETE_ASYNC("websocket_stream::on_handshake");
 
-	if (e)
+	if (ec)
     {
     	m_connecting = false;
-        m_connect_handler(e);
+        m_connect_handler(ec);
         return;
     }
+
+	if(!m_connecting)
+	{
+		m_connect_handler(boost::asio::error::operation_aborted);
+		return;
+	}
 
 	m_connecting = false;
 	m_open = true;
 	m_connect_handler(error_code{});
 }
 
-void websocket_stream::on_read(error_code const& e, std::size_t bytes_written, read_handler handler) {
+void websocket_stream::on_read(error_code const& ec, std::size_t bytes_written, read_handler handler) {
 	// Clean close from remote
-    if (e == websocket::error::closed) {
+    if (ec == websocket::error::closed) {
         m_open = false;
     }
 
-	handler(e, bytes_written);
+	handler(ec, bytes_written);
 }
 
-void websocket_stream::on_write(error_code const& e, std::size_t bytes_written, write_handler handler) {
-	handler(e, bytes_written);
+void websocket_stream::on_write(error_code const& ec, std::size_t bytes_written, write_handler handler) {
+	handler(ec, bytes_written);
 }
 
 }
