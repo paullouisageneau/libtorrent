@@ -47,7 +47,7 @@ namespace {
 namespace libtorrent {
 namespace aux {
 
-long const  RTC_CONNECTION_TIMEOUT = 60000; // msecs
+long const  RTC_CONNECTION_TIMEOUT = 120000; // msecs
 char const* RTC_STUN_SERVER = "stun.l.google.com:19302";
 
 rtc_signaling::rtc_signaling(io_context& ioc, torrent* t, rtc_stream_handler handler)
