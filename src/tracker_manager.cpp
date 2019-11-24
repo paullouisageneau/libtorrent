@@ -291,9 +291,6 @@ namespace libtorrent {
         else if (protocol == "ws" || protocol == "wss") {
 			std::shared_ptr<request_callback> cb = c.lock();
 			if(!cb) return;
-#ifndef TORRENT_DISABLE_LOGGING
-			cb->debug_log("*** WEBSOCKET_TRACKER [ url: %s]", req.url.c_str());
-#endif
 			const int max_offers = 10;
 			req.num_want = std::min(req.num_want, max_offers);
 			cb->generate_rtc_offers(req.num_want
