@@ -289,20 +289,30 @@ namespace libtorrent {
         }
 #if TORRENT_USE_RTC
         else if (protocol == "ws" || protocol == "wss") {
-#ifndef TORRENT_DISABLE_LOGGING
 			std::shared_ptr<request_callback> cb = c.lock();
-			if (cb) cb->debug_log("*** WEBSOCKET_TRACKER [ url: %s]", req.url.c_str());
+			if(!cb) return;
+#ifndef TORRENT_DISABLE_LOGGING
+			cb->debug_log("*** WEBSOCKET_TRACKER [ url: %s]", req.url.c_str());
 #endif
-            std::shared_ptr<websocket_tracker_connection> con;
-            auto it = m_websocket_conns.find(req.url);
-            if (it != m_websocket_conns.end()) {
-                con = it->second;
-                con->queue_request(std::move(req), c);
-            } else {
-                con = std::make_shared<websocket_tracker_connection>(ios, *this, std::move(req), c);
-                m_websocket_conns[req.url] = con;
-            }
-            con->start();
+			const int max_num_offers = 10;
+			cb->generate_rtc_offers(std::min(req.num_want, max_num_offers)
+				, [this, &ios, req = std::move(req), c](error_code const& ec
+					, std::vector<aux::rtc_offer> const& offers) mutable
+			{
+				if(!ec) req.offers = offers;
+
+				std::shared_ptr<websocket_tracker_connection> con;
+				auto it = m_websocket_conns.find(req.url);
+				if (it != m_websocket_conns.end()) {
+					con = it->second;
+					con->queue_request(std::move(req), c);
+				} else {
+					con = std::make_shared<websocket_tracker_connection>(ios, *this, std::move(req), c);
+					m_websocket_conns[req.url] = con;
+				}
+				con->start();
+			});
+			return;
         }
 #endif
         // we need to post the error to avoid deadlock

@@ -730,6 +730,8 @@ namespace libtorrent {
 		void update_auto_sequential();
 	private:
 #if TORRENT_USE_RTC
+		void generate_rtc_offers(int count
+			, std::function<void(error_code const&, std::vector<aux::rtc_offer> const&)> handler);
 		void on_rtc_offer(aux::rtc_offer const& offer);
 		void on_rtc_answer(aux::rtc_answer const& answer);
         void on_rtc_stream(peer_id const& pid, aux::rtc_stream_init& stream_init);
@@ -779,7 +781,6 @@ namespace libtorrent {
 		void force_tracker_request(time_point, int tracker_idx, reannounce_flags_t flags);
 		void scrape_tracker(int idx, bool user_triggered);
 		void announce_with_tracker(event_t e = event_t::none);
-		void send_tracker_request(event_t e, tracker_request& req);
 
 #ifndef TORRENT_DISABLE_DHT
 		void dht_announce();

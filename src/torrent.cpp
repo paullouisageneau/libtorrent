@@ -2803,24 +2803,6 @@ bool is_downloading_state(int const st)
 		req.num_want = (req.event == event_t::stopped)
 			? 0 : settings().get_int(settings_pack::num_want);
 
-#if TORRENT_USE_RTC
-		// offers
-		if (req.num_want > 0) {
-			const int max_num_offers = 10;
-			m_rtc_signaling->generate_offers(std::min(req.num_want, max_num_offers)
-					, [self = shared_from_this(), e, req_ = std::move(req)](error_code const& ec, std::vector<aux::rtc_offer> const& offers) {
-				tracker_request req(req_);
-				if(!ec) req.offers = offers;
-				self->send_tracker_request(e, req);
-			});
-        }
-#else
-		send_tracker_request(e, req);
-#endif
-	}
-
-	void torrent::send_tracker_request(event_t e, tracker_request& req)
-	{
 // some older versions of clang had a bug where it would fire this warning here
 #ifdef __clang__
 #pragma clang diagnostic push
@@ -2875,6 +2857,15 @@ bool is_downloading_state(int const st)
 				std::swap(ae.endpoints[valid_endpoints], ae.endpoints.back());
 				valid_endpoints++;
 			});
+
+#if TORRENT_USE_RTC
+			std::string const ae_protocol = ae.url.substr(0, ae.url.find(':'));
+			if (ae_protocol == "ws" || ae_protocol == "wss")
+			{
+				// WebSocket trackers will ignore the endpoint anyway
+				valid_endpoints = std::min(valid_endpoints, std::size_t(1));
+			}
+#endif
 
 			TORRENT_ASSERT(valid_endpoints <= ae.endpoints.size());
 			ae.endpoints.erase(ae.endpoints.begin() + int(valid_endpoints), ae.endpoints.end());
@@ -5695,6 +5686,12 @@ bool is_downloading_state(int const st)
 	}
 
 #if TORRENT_USE_RTC
+	void torrent::generate_rtc_offers(int count
+			, std::function<void(error_code const&, std::vector<aux::rtc_offer> const&)> handler)
+	{
+		m_rtc_signaling->generate_offers(count, std::move(handler));
+	}
+
 	void torrent::on_rtc_offer(aux::rtc_offer const& offer)
 	{
 		m_rtc_signaling->process_offer(offer);

@@ -237,8 +237,13 @@ enum class event_t : std::uint8_t
 			, const std::string& msg
 			, seconds32 retry_interval) = 0;
 #if TORRENT_USE_RTC
-		virtual void on_rtc_offer(aux::rtc_offer const&) {};
-		virtual void on_rtc_answer(aux::rtc_answer const&) {};
+		virtual void generate_rtc_offers(int /*count*/
+			, std::function<void(error_code const&, std::vector<aux::rtc_offer> const&)> handler)
+		{
+			handler(boost::asio::error::operation_not_supported, {});
+		}
+		virtual void on_rtc_offer(aux::rtc_offer const&) {}
+		virtual void on_rtc_answer(aux::rtc_answer const&) {}
 #endif
 #ifndef TORRENT_DISABLE_LOGGING
 		virtual bool should_log() const = 0;
