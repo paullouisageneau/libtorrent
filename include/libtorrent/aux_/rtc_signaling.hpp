@@ -62,8 +62,10 @@ namespace aux {
 
 struct rtc_stream_init;
 
+const int RTC_OFFER_ID_LEN = 16;
+
 struct rtc_offer_id : public std::vector<char> {
-	rtc_offer_id() : std::vector<char>(20, '\0') {}
+	rtc_offer_id() : std::vector<char>(RTC_OFFER_ID_LEN, '\0') {}
 	rtc_offer_id(span<char const> s) : std::vector<char>(s.begin(), s.end()) {}
 };
 
