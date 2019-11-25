@@ -179,15 +179,23 @@ void websocket_tracker_connection::queue_answer(tracker_answer ans)
 
 void websocket_tracker_connection::send_pending()
 {
-	if(!m_sending && !m_pending.empty())
-	{
-		m_sending = true;
+	if(m_sending || m_pending.empty()) return;
 
-		std::visit([this](auto const& message) {
-			do_send(message);
-		},
-		std::get<0>(m_pending.front()));
-	}
+	m_sending = true;
+
+	tracker_message msg;
+    std::weak_ptr<request_callback> cb;
+    std::tie(msg, cb) = m_pending.front();
+
+	// Update requester
+	if(cb.lock()) m_requester = cb;
+
+	std::visit([&](auto const& m)
+		{
+			do_send(m);
+		}
+		, msg
+	);
 }
 
 void websocket_tracker_connection::do_send(tracker_request const& req)
@@ -281,20 +289,16 @@ void websocket_tracker_connection::on_connect(error_code const& ec)
 	do_read();
 }
 
-void websocket_tracker_connection::on_timeout(error_code const& ec)
+void websocket_tracker_connection::on_timeout(error_code const& /*ec*/)
 {
-	if(ec)
-	{
-		// TODO
-		return;
-	}
+	// Dummy
 }
 
 void websocket_tracker_connection::on_read(error_code const& ec, std::size_t /* bytes_read */)
 {
 	if(ec)
     {
-        // TODO
+        // Ignore
         return;
     }
 
@@ -311,6 +315,10 @@ void websocket_tracker_connection::on_read(error_code const& ec, std::size_t /* 
     auto const payload = json::parse(data, data + size);
 
     auto const info_hash = sha1_hash(to_latin1(payload.value<std::string>("info_hash", "")));
+
+	// Find the correct callback given the info_hash
+	if(auto it = m_callbacks.find(info_hash); it != m_callbacks.end()) cb = it->second.lock();
+	if (!cb) return;
 
 	if(auto it = payload.find("offer"); it != payload.end())
 	{
@@ -361,18 +369,26 @@ void websocket_tracker_connection::on_write(error_code const& ec, std::size_t /*
 
 	if(!m_pending.empty())
 	{
-		// Update requester
-		if(auto r = std::get<1>(m_pending.front()); r.lock())
-		{
-			m_requester = r;
-		}
-
+		tracker_message msg;
+		std::weak_ptr<request_callback> cb;
+		std::tie(msg, cb) = std::move(m_pending.front());
 		m_pending.pop();
+
+		// Store callback
+		if(cb.lock())
+		{
+			std::visit([&](auto const& m)
+				{
+					m_callbacks.emplace(m.info_hash, cb);
+				}
+				, msg
+			);
+		}
 	}
 
 	if(ec)
 	{
-		// TODO
+		// Ignore
 		return;
 	}
 

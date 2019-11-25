@@ -41,6 +41,7 @@ POSSIBILITY OF SUCH DAMAGE.
 
 #include <boost/beast/core/flat_buffer.hpp>
 
+#include <map>
 #include <memory>
 #include <queue>
 #include <tuple>
@@ -104,6 +105,8 @@ private:
 	using tracker_message = std::variant<tracker_request, tracker_answer>;
 	std::queue<std::tuple<tracker_message, std::weak_ptr<request_callback>>> m_pending;
 	bool m_sending;
+
+	std::map<sha1_hash, std::weak_ptr<request_callback>> m_callbacks;
 };
 
 }
