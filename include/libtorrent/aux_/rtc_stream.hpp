@@ -134,7 +134,6 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 
 	bool is_open() const;
 
-	int read_buffer_size() const;
 	void add_read_buffer(void* buf, std::size_t len);
 	void issue_read();
 	void add_write_buffer(void const* buf, std::size_t len);
@@ -220,7 +219,7 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 			return 0;
 		}
 
-		if (read_buffer_size() == 0)
+		if (available() == 0)
 		{
 			ec = boost::asio::error::would_block;
 			return 0;

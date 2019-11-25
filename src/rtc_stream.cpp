@@ -191,11 +191,6 @@ rtc_stream::endpoint_type rtc_stream::local_endpoint(error_code& ec) const
 			, std::stoul(addr->substr(pos+1)));
 }
 
-int rtc_stream::read_buffer_size() const
-{
-    return m_read_buffer_size;
-}
-
 void rtc_stream::add_read_buffer(void* buf, std::size_t const len)
 {
     TORRENT_ASSERT(len < INT_MAX);
