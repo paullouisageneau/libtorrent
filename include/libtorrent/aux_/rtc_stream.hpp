@@ -82,7 +82,7 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 	rtc_stream& operator=(rtc_stream const&) = delete;
 	rtc_stream(rtc_stream const&) = delete;
 	rtc_stream& operator=(rtc_stream&&) noexcept = delete;
-	rtc_stream(rtc_stream&&) noexcept = delete;
+	rtc_stream(rtc_stream&&) noexcept;
 
 	lowest_layer_type& lowest_layer() { return *this; }
 

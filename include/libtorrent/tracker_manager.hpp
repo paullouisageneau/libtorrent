@@ -96,8 +96,6 @@ namespace libtorrent {
 namespace aux {
 	struct session_logger;
 	struct session_settings;
-	struct rtc_offer;
-	struct rtc_answer;
 }
 
 using tracker_request_flags_t = flags::bitfield_flag<std::uint8_t, struct tracker_request_flags_tag>;

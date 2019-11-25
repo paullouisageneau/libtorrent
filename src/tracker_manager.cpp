@@ -480,3 +480,4 @@ namespace libtorrent {
 		return int(m_http_conns.size() + m_udp_conns.size());
 	}
 }
+

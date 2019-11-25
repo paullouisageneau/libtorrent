@@ -5704,14 +5704,13 @@ bool is_downloading_state(int const st)
 
 	void torrent::on_rtc_stream(peer_id const& pid, aux::rtc_stream_init& stream_init)
 	{
-		std::shared_ptr<aux::socket_type> s = std::make_shared<aux::socket_type>(m_ses.get_context());
-		s->instantiate<aux::rtc_stream>(m_ses.get_context(), &stream_init);
+		aux::socket_type s(aux::rtc_stream(m_ses.get_context(), stream_init));
 
 		torrent_state st = get_peer_list_state();
 		torrent_peer* peerinfo = m_peer_list->add_rtc_peer(pid.to_string(), peer_source_flags_t{}, {}, &st);
 
 		error_code ec;
-		auto remote_endpoint = s->remote_endpoint(ec);
+		auto remote_endpoint = s.remote_endpoint(ec);
 
 		peer_id const our_pid = aux::generate_peer_id(settings());
 		peer_connection_args pack{
@@ -5721,13 +5720,13 @@ bool is_downloading_state(int const st)
 			, &m_ses.disk_thread()
 			, &m_ses.get_context()
 			, shared_from_this()
-			, s
+			, std::move(s)
 			, remote_endpoint
 			, peerinfo
 			, our_pid
 		};
 
-		auto c = std::make_shared<bt_peer_connection>(std::move(pack));
+		auto c = std::make_shared<bt_peer_connection>(pack);
 
 #if TORRENT_USE_ASSERTS
 		c->m_in_constructor = false;

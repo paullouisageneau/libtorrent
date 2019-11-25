@@ -30,14 +30,13 @@ POSSIBILITY OF SUCH DAMAGE.
 
 */
 
+#include "libtorrent/config.hpp" // for TORRENT_USE_RTC
+
 #if TORRENT_USE_RTC
 
 #include "libtorrent/websocket_tracker_connection.hpp"
 #include "libtorrent/aux_/escape_string.hpp"
-#include "libtorrent/aux_/rtc_signaling.hpp"
 #include "libtorrent/aux_/session_settings.hpp"
-#include "libtorrent/aux_/websocket_stream.hpp"
-#include "libtorrent/config.hpp"
 #include "libtorrent/io.hpp"
 #include "libtorrent/ip_filter.hpp"
 #include "libtorrent/socket.hpp"
@@ -59,7 +58,6 @@ namespace libtorrent {
 
 using namespace std::placeholders;
 
-using websocket_stream = aux::websocket_stream;
 using json = nlohmann::json;
 
 std::string from_latin1(std::string const& s) {
@@ -125,8 +123,7 @@ websocket_tracker_connection::websocket_tracker_connection(io_context& ios
 		, std::weak_ptr<request_callback> cb)
 	: tracker_connection(man, req, ios, cb)
 	  , m_io_context(ios)
-	  , m_websocket(std::make_shared<websocket_stream>(m_io_context, m_man.host_resolver(), req.ssl_ctx))
-	  , m_sending(false)
+	  , m_websocket(std::make_shared<aux::websocket_stream>(m_io_context, m_man.host_resolver(), req.ssl_ctx))
 {
 	aux::session_settings const& settings = m_man.settings();
 
@@ -173,7 +170,7 @@ void websocket_tracker_connection::queue_request(tracker_request req, std::weak_
 
 void websocket_tracker_connection::queue_answer(tracker_answer ans)
 {
-	m_pending.emplace(tracker_message{std::move(ans)}, std::shared_ptr<request_callback>());
+	m_pending.emplace(tracker_message{std::move(ans)}, std::weak_ptr<request_callback>{});
 	if(m_websocket->is_open()) send_pending();
 }
 
@@ -214,7 +211,7 @@ void websocket_tracker_connection::do_send(tracker_request const& req)
 	payload["key"] = str_key;
 
 	static const char* event_string[] = {"completed", "started", "stopped", "paused"};
-	if(req.event != tracker_request::none)
+	if(req.event != event_t::none)
 		payload["event"] = event_string[static_cast<int>(req.event) - 1];
 
 	payload["peer_id"] = from_latin1({req.pid.data(), req.pid.size()});

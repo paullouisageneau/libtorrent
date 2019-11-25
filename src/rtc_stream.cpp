@@ -52,11 +52,21 @@ rtc_stream::rtc_stream(io_context& ioc, rtc_stream_init const& init)
 			char const *raw = reinterpret_cast<char const*>(data.data());
 			post(m_io_context, std::bind(&rtc_stream::on_message
 				, this
-				, boost::system::error_code{}
+				, error_code{}
 				, std::vector<char>(raw, raw + data.size())
 			));
         }, message);
 	});
+}
+
+rtc_stream::rtc_stream(rtc_stream&& rhs) noexcept
+	: rtc_stream(rhs.m_io_context, { rhs.m_peer_connection, rhs.m_data_channel })
+{
+	rhs.m_peer_connection.reset();
+	rhs.m_data_channel.reset();
+
+	std::swap(m_incoming, rhs.m_incoming);
+	std::swap(m_incoming_size, rhs.m_incoming_size);
 }
 
 rtc_stream::~rtc_stream()
@@ -86,8 +96,11 @@ close_reason_t rtc_stream::get_close_reason()
 
 void rtc_stream::close()
 {
-	m_data_channel->onMessage([](std::variant<rtc::binary, rtc::string> const&) {});
-	m_data_channel->close();
+	if(m_data_channel) // it can be null after a move constructor
+	{
+		m_data_channel->onMessage([](std::variant<rtc::binary, rtc::string> const&) {});
+		m_data_channel->close();
+	}
 
 	cancel_handlers(boost::asio::error::operation_aborted);
 }

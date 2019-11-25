@@ -33,8 +33,11 @@ POSSIBILITY OF SUCH DAMAGE.
 #ifndef TORRENT_WEBSOCKET_TRACKER_CONNECTION_HPP_INCLUDED
 #define TORRENT_WEBSOCKET_TRACKER_CONNECTION_HPP_INCLUDED
 
+#include "libtorrent/aux_/rtc_signaling.hpp" // for rtc_offer and rtc_answer
+#include "libtorrent/aux_/websocket_stream.hpp"
 #include "libtorrent/config.hpp"
 #include "libtorrent/error_code.hpp"
+#include "libtorrent/io_context.hpp"
 #include "libtorrent/peer_id.hpp"
 #include "libtorrent/resolver_interface.hpp"
 #include "libtorrent/tracker_manager.hpp" // for tracker_connection
@@ -48,12 +51,6 @@ POSSIBILITY OF SUCH DAMAGE.
 #include <variant>
 
 namespace libtorrent {
-
-namespace aux {
-	class websocket_stream;
-	class rtc_offer;
-	class rtc_answer;
-}
 
 struct tracker_answer
 {
@@ -91,7 +88,6 @@ private:
 	void send_pending();
 	void do_send(tracker_request const& req);
 	void do_send(tracker_answer const& ans);
-
 	void do_read();
 	void on_connect(error_code const& ec);
 	void on_timeout(error_code const& ec);
@@ -104,11 +100,12 @@ private:
 
 	using tracker_message = std::variant<tracker_request, tracker_answer>;
 	std::queue<std::tuple<tracker_message, std::weak_ptr<request_callback>>> m_pending;
-	bool m_sending;
-
 	std::map<sha1_hash, std::weak_ptr<request_callback>> m_callbacks;
+
+	bool m_sending = false;
 };
 
 }
 
 #endif // TORRENT_WEBSOCKET_TRACKER_CONNECTION_HPP_INCLUDED
+

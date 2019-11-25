@@ -33,9 +33,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #ifndef TORRENT_RTC_SIGNALING_HPP_INCLUDED
 #define TORRENT_RTC_SIGNALING_HPP_INCLUDED
 
-#include "libtorrent/alert.hpp"
-#include "libtorrent/alert_manager.hpp"
-#include "libtorrent/alert_types.hpp"
+#include "libtorrent/config.hpp"
 #include "libtorrent/error_code.hpp"
 #include "libtorrent/io.hpp"
 #include "libtorrent/io_context.hpp"
@@ -58,6 +56,10 @@ namespace rtc {
 }
 
 namespace libtorrent {
+
+class alert_manager;
+class torrent;
+
 namespace aux {
 
 struct rtc_stream_init;
