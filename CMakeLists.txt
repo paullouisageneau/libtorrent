@@ -787,8 +787,9 @@ include(CheckCXXCompilerFlag)
 
 add_subdirectory(bindings)
 
-# TODO: Option
+if(webtorrent)
 target_link_libraries(torrent-rasterbar PRIVATE LibDataChannel::LibDataChannelStatic nlohmann_json::nlohmann_json)
+endif()
 
 install(TARGETS torrent-rasterbar EXPORT LibtorrentRasterbarTargets
 	LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
