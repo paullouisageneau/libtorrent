@@ -511,6 +511,10 @@ feature i2p : on off : composite propagated ;
 feature.compose <i2p>on : <define>TORRENT_USE_I2P=1 ;
 feature.compose <i2p>off : <define>TORRENT_USE_I2P=0 ;
 
+feature webtorrent : on off : composite propagated ;
+feature.compose <webtorrent>on : <define>TORRENT_USE_RTC=1 ;
+feature.compose <webtorrent>off : <define>TORRENT_USE_RTC=0 ;
+
 feature iconv : auto on off : composite propagated ;
 feature.compose <iconv>on : <define>TORRENT_USE_ICONV=1 ;
 feature.compose <iconv>off : <define>TORRENT_USE_ICONV=0 ;

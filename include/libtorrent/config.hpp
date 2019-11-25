@@ -92,6 +92,7 @@ POSSIBILITY OF SUCH DAMAGE.
 // (disables some float-dependent APIs)
 #define TORRENT_NO_FPU 1
 #define TORRENT_USE_I2P 0
+#define TORRENT_USE_RTC 0
 #ifndef TORRENT_USE_ICONV
 #define TORRENT_USE_ICONV 0
 #endif
@@ -470,6 +471,10 @@ POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef TORRENT_USE_I2P
 #define TORRENT_USE_I2P 1
+#endif
+
+#ifndef TORRENT_USE_RTC
+#define TORRENT_USE_RTC 1
 #endif
 
 #ifndef TORRENT_HAS_SYMLINK
