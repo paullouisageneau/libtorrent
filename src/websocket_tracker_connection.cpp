@@ -34,38 +34,47 @@ POSSIBILITY OF SUCH DAMAGE.
 
 #if TORRENT_USE_RTC
 
-#include "libtorrent/websocket_tracker_connection.hpp"
 #include "libtorrent/aux_/escape_string.hpp"
 #include "libtorrent/aux_/session_settings.hpp"
 #include "libtorrent/io.hpp"
 #include "libtorrent/ip_filter.hpp"
 #include "libtorrent/socket.hpp"
 #include "libtorrent/socket_io.hpp"
+#include "libtorrent/span.hpp"
 #include "libtorrent/tracker_manager.hpp"
+#include "libtorrent/websocket_tracker_connection.hpp"
 
 #include "nlohmann/json.hpp"
+
+#include <boost/system/system_error.hpp>
 
 #include <algorithm>
 #include <cctype>
 #include <cstdio> // for snprintf
+#include <exception>
 #include <functional>
 #include <list>
 #include <locale>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace libtorrent {
 
 using namespace std::placeholders;
 
-using json = nlohmann::json;
+namespace errc = boost::system::errc;
 
-std::string from_latin1(std::string const& s) {
+using json = nlohmann::json;
+using difference_type = span<const char>::difference_type;
+
+std::string from_latin1(span<char const> s) {
 	// Convert ISO-8859-1 (aka latin1) input to UTF-8
 	std::string r;
 	r.reserve(s.size()*2);
-	for(unsigned char c : s)
+	for(auto it = s.begin(); it != s.end(); ++it)
 	{
+		unsigned char c = *it;
 		if (!(c & 0x80))
 		{
 			r.push_back(c);
@@ -79,11 +88,11 @@ std::string from_latin1(std::string const& s) {
 	return r;
 }
 
-std::string to_latin1(std::string const& s) {
+std::string to_latin1(std::string_view sv) {
 	std::string r;
-	r.reserve(s.size());
-	auto it = s.begin();
-	while(it != s.end())
+	r.reserve(sv.size());
+	auto it = sv.begin();
+	while(it != sv.end())
 	{
 		unsigned char c = *it;
 
@@ -104,7 +113,7 @@ std::string to_latin1(std::string const& s) {
 			cp = c << ((len - 1) * 6);
 			while(--len)
 			{
-				if(++it == s.end()) return r; // string is truncated
+				if(++it == sv.end()) return r; // string is truncated
 				c = *it;
 				c &= 0x7F;
 				cp |= c << ((len - 1) * 6);
@@ -182,12 +191,13 @@ void websocket_tracker_connection::send_pending()
 
 	tracker_message msg;
     std::weak_ptr<request_callback> cb;
-    std::tie(msg, cb) = m_pending.front();
+    std::tie(msg, cb) = std::move(m_pending.front());
+	m_pending.pop();
 
 	// Update requester
 	if(cb.lock()) m_requester = cb;
 
-	std::visit([&](auto const& m)
+	boost::apply_visitor([&](auto const& m)
 		{
 			do_send(m);
 		}
@@ -197,6 +207,9 @@ void websocket_tracker_connection::send_pending()
 
 void websocket_tracker_connection::do_send(tracker_request const& req)
 {
+	// Update request
+	m_req = req;
+
 	json payload;
 	payload["action"] = "announce";
 	payload["info_hash"] = from_latin1({req.info_hash.data(), std::size_t(req.info_hash.size())});
@@ -220,7 +233,7 @@ void websocket_tracker_connection::do_send(tracker_request const& req)
 	for(auto const& offer : req.offers)
 	{
 		json payload_offer;
-		payload_offer["offer_id"] = from_latin1({offer.id.data(), offer.id.size()});
+		payload_offer["offer_id"] = from_latin1({offer.id.data(), difference_type(offer.id.size())});
 		payload_offer["offer"]["type"] = "offer";
 		payload_offer["offer"]["sdp"] = offer.sdp;
 		payload["offers"].push_back(payload_offer);
@@ -228,11 +241,13 @@ void websocket_tracker_connection::do_send(tracker_request const& req)
 
 	std::string const data = payload.dump();
 
+#ifndef TORRENT_DISABLE_LOGGIN
 	std::shared_ptr<request_callback> cb = requester();
 	if (cb) cb->debug_log("*** WEBSOCKET_TRACKER_WRITE [ %s ]", data.c_str());
+#endif
 
 	std::shared_ptr<websocket_tracker_connection> self(shared_from_this());
-    m_websocket->async_write_some(boost::asio::const_buffer(data.data(), data.size())
+    m_websocket->async_write(boost::asio::const_buffer(data.data(), data.size())
      		, std::bind(&websocket_tracker_connection::on_write, self, _1, _2));
 }
 
@@ -240,29 +255,33 @@ void websocket_tracker_connection::do_send(tracker_answer const& ans)
 {
     json payload;
     payload["action"] = "announce";
-    payload["info_hash"] = from_latin1({ans.info_hash.data(), std::size_t(ans.info_hash.size())});
-    payload["offer_id"] = from_latin1({ans.answer.offer_id.data(), ans.answer.offer_id.size()});
-    payload["to_peer_id"] = from_latin1({ans.answer.pid.data(), ans.answer.pid.size()});
-    payload["peer_id"] =  from_latin1({ans.pid.data(), ans.pid.size()});
+    payload["info_hash"] = from_latin1({ans.info_hash.data(), difference_type(ans.info_hash.size())});
+    payload["offer_id"] = from_latin1({ans.answer.offer_id.data(), difference_type(ans.answer.offer_id.size())});
+    payload["to_peer_id"] = from_latin1({ans.answer.pid.data(), difference_type(ans.answer.pid.size())});
+    payload["peer_id"] =  from_latin1({ans.pid.data(), difference_type(ans.pid.size())});
     payload["answer"]["type"] = "answer";
     payload["answer"]["sdp"] = ans.answer.sdp;
 
 	std::string const data = payload.dump();
 
+#ifndef TORRENT_DISABLE_LOGGIN
 	std::shared_ptr<request_callback> cb = requester();
 	if (cb) cb->debug_log("*** WEBSOCKET_TRACKER_WRITE [ %s ]", data.c_str());
+#endif
 
 	std::shared_ptr<websocket_tracker_connection> self(shared_from_this());
-	m_websocket->async_write_some(boost::asio::const_buffer(data.data(), data.size())
+	m_websocket->async_write(boost::asio::const_buffer(data.data(), data.size())
 			, std::bind(&websocket_tracker_connection::on_write, self, _1, _2));
 }
 
 void websocket_tracker_connection::do_read()
 {
+	if(!m_websocket->is_open()) return;
+
 	m_read_buffer.clear();
 
 	std::shared_ptr<websocket_tracker_connection> self(shared_from_this());
-	m_websocket->async_read_some(m_read_buffer
+	m_websocket->async_read(m_read_buffer
             , std::bind(&websocket_tracker_connection::on_read, self, _1, _2));
 }
 
@@ -270,17 +289,20 @@ void websocket_tracker_connection::on_connect(error_code const& ec)
 {
 	if(ec)
 	{
+#ifndef TORRENT_DISABLE_LOGGIN
 		std::shared_ptr<request_callback> cb = requester();
 		if (cb) cb->debug_log("*** WEBSOCKET_TRACKER_FAILED [ url: %s, error: %d ]"
 				, tracker_req().url.c_str(), int(ec.value()));
-
+#endif
 		while(!m_pending.empty()) m_pending.pop();
 		return;
 	}
 
+#ifndef TORRENT_DISABLE_LOGGIN
 	std::shared_ptr<request_callback> cb = requester();
     if (cb) cb->debug_log("*** WEBSOCKET_TRACKER_CONNECTED [ url: %s ]"
     		, tracker_req().url.c_str());
+#endif
 
 	send_pending();
 	do_read();
@@ -293,29 +315,70 @@ void websocket_tracker_connection::on_timeout(error_code const& /*ec*/)
 
 void websocket_tracker_connection::on_read(error_code const& ec, std::size_t /* bytes_read */)
 {
+	std::shared_ptr<request_callback> cb = requester();
+
 	if(ec)
     {
-        // Ignore
+		if(cb) cb->tracker_request_error(
+					tracker_req()
+					, ec
+					, ec.message()
+					, seconds32(120));
         return;
     }
 
-	std::shared_ptr<request_callback> cb = requester();
-    if (!cb) return;
-
     auto const& buf = m_read_buffer.data();
-
-	std::string str(reinterpret_cast<char const*>(buf.data()), buf.size());
-	cb->debug_log("*** WEBSOCKET_TRACKER_READ [ size: %d data: %s ]", int(str.size()), str.c_str());
-
-	auto const data = reinterpret_cast<char const*>(buf.data());
+	auto const data = static_cast<char const*>(buf.data());
     auto const size = buf.size();
-    auto const payload = json::parse(data, data + size);
 
-    auto const info_hash = sha1_hash(to_latin1(payload.value<std::string>("info_hash", "")));
+	json payload;
+    try {
+		payload = json::parse(data, data + size);
+	}
+	catch(std::exception const& e)
+	{
+		if(cb) cb->tracker_request_error(
+                    tracker_req()
+                    , errc::make_error_code(errc::bad_message)
+                    , e.what()
+                    , seconds32(120));
+        do_read();
+        return;
+	}
+
+#ifndef TORRENT_DISABLE_LOGGING
+	std::string str(data, size);
+	if(cb) cb->debug_log("*** WEBSOCKET_TRACKER_READ [ size: %d data: %s ]", int(str.size()), str.c_str());
+#endif
+
+	auto it = payload.find("info_hash");
+	if(it == payload.end())
+	{
+		if(cb) cb->debug_log("*** WEBSOCKET_TRACKER_READ Failed: no info hash in message");
+		do_read();
+		return;
+	}
+
+	auto const raw_info_hash = to_latin1(it->get<std::string>());
+	if(raw_info_hash.size() != 20)
+    {
+        if(cb) cb->debug_log("*** WEBSOCKET_TRACKER_READ Failed: info hash in message has invalid size %d"
+        		, int(raw_info_hash.size()));
+        do_read();
+        return;
+    }
+
+    auto const info_hash = sha1_hash(span<char const>{raw_info_hash.data(), 20});
 
 	// Find the correct callback given the info_hash
 	if(auto it = m_callbacks.find(info_hash); it != m_callbacks.end()) cb = it->second.lock();
-	if (!cb) return;
+	if (!cb)
+	{
+		cb->debug_log("*** WEBSOCKET_TRACKER_READ Failed: no callback for info hash");
+		m_callbacks.erase(info_hash);
+		do_read();
+		return;
+	}
 
 	if(auto it = payload.find("offer"); it != payload.end())
 	{
@@ -357,35 +420,21 @@ void websocket_tracker_connection::on_read(error_code const& ec, std::size_t /* 
 	}
 
 	// Continue reading
-	if(m_websocket->is_open()) do_read();
+	do_read();
 }
 
 void websocket_tracker_connection::on_write(error_code const& ec, std::size_t /* bytes_written */)
 {
 	m_sending = false;
 
-	if(!m_pending.empty())
-	{
-		tracker_message msg;
-		std::weak_ptr<request_callback> cb;
-		std::tie(msg, cb) = std::move(m_pending.front());
-		m_pending.pop();
-
-		// Store callback
-		if(cb.lock())
-		{
-			std::visit([&](auto const& m)
-				{
-					m_callbacks.emplace(m.info_hash, cb);
-				}
-				, msg
-			);
-		}
-	}
-
 	if(ec)
 	{
-		// Ignore
+		std::shared_ptr<request_callback> cb = requester();
+		if(cb) cb->tracker_request_error(
+					tracker_req()
+					, ec
+					, ec.message()
+					, seconds32(120));
 		return;
 	}
 

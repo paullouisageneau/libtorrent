@@ -319,15 +319,12 @@ enum class event_t : std::uint8_t
 				timeout_handler::shared_from_this());
 		}
 
-	private:
-
-		const tracker_request m_req;
-
 	protected:
 
 		void fail_impl(error_code const& ec, std::string msg = std::string()
 			, seconds32 interval = seconds32(0), seconds32 min_interval = seconds32(0));
 
+		tracker_request m_req;
 		std::weak_ptr<request_callback> m_requester;
 
 		tracker_manager& m_man;

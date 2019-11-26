@@ -103,7 +103,7 @@ struct TORRENT_EXTRA_EXPORT websocket_stream
 	}
 
 	template <class Mutable_Buffer, class Handler>
-	void async_read_some(Mutable_Buffer& buffer, Handler const& handler)
+	void async_read(Mutable_Buffer& buffer, Handler const& handler)
 	{
 		if (!m_open)
 		{
@@ -120,7 +120,7 @@ struct TORRENT_EXTRA_EXPORT websocket_stream
 	}
 
 	template <class Const_Buffer, class Handler>
-	void async_write_some(Const_Buffer const& buffer, Handler const& handler)
+	void async_write(Const_Buffer const& buffer, Handler const& handler)
 	{
 		if (!m_open)
 		{
