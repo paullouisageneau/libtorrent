@@ -122,6 +122,14 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 	template <class GettableSocketOption>
 	void get_option(GettableSocketOption&, error_code&) {}
 
+	template <class Protocol>
+	void open(Protocol const&, error_code&)
+	{ /* dummy */ }
+
+	template <class Protocol>
+	void open(Protocol const&)
+	{ /* dummy */ }
+
 	void cancel(error_code&)
 	{
 		cancel_handlers(boost::asio::error::operation_aborted);
@@ -134,9 +142,7 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 
 	bool is_open() const;
 
-	void add_read_buffer(void* buf, std::size_t len);
 	void issue_read();
-	void add_write_buffer(void const* buf, std::size_t len);
 	void issue_write();
 	std::size_t read_some(bool clear_buffers);
 
@@ -181,18 +187,16 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 			post(m_io_context, std::bind<void>(handler, boost::asio::error::operation_not_supported, std::size_t(0)));
 			return;
 		}
-		std::size_t bytes_added = 0;
-		for (auto i = buffer_sequence_begin(buffers)
-			, end(buffer_sequence_end(buffers)); i != end; ++i)
+		for (auto it = buffer_sequence_begin(buffers)
+			, end(buffer_sequence_end(buffers)); it != end; ++it)
 		{
-			if (i->size() == 0) continue;
-			add_read_buffer(i->data(), i->size());
-			bytes_added += i->size();
+			if (it->size() == 0) continue;
+			m_read_buffer.emplace_back(*it);
+			m_read_buffer_size += it->size();
 		}
-		if (bytes_added == 0)
+		if (m_read_buffer_size == 0)
 		{
 			// if we're reading 0 bytes, post handler immediately
-			// asio's SSL layer depends on this behavior
 			post(m_io_context, std::bind<void>(handler, error_code(), std::size_t(0)));
 			return;
 		}
@@ -201,13 +205,40 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 		issue_read();
 	}
 
-	template <class Protocol>
-	void open(Protocol const&, error_code&)
-	{ /* dummy */ }
+	template <class Const_Buffers, class Handler>
+	void async_write_some(Const_Buffers const& buffers, Handler const& handler)
+	{
+		if (!m_data_channel)
+		{
+			post(m_io_context, std::bind<void>(handler
+				, boost::asio::error::not_connected, std::size_t(0)));
+			return;
+		}
 
-	template <class Protocol>
-	void open(Protocol const&)
-	{ /* dummy */ }
+		TORRENT_ASSERT(!m_write_handler);
+		if (m_write_handler)
+		{
+			post(m_io_context, std::bind<void>(handler
+				, boost::asio::error::operation_not_supported, std::size_t(0)));
+			return;
+		}
+
+		for (auto it = buffer_sequence_begin(buffers)
+			, end(buffer_sequence_end(buffers)); it != end; ++it)
+		{
+			if (it->size() == 0) continue;
+			m_write_buffer.emplace_back(*it);
+			m_write_buffer_size += it->size();
+		}
+		if (m_write_buffer_size == 0)
+		{
+			// if we're writing 0 bytes, post handler immediately
+			post(m_io_context, std::bind<void>(handler, error_code(), std::size_t(0)));
+			return;
+		}
+		m_write_handler = handler;
+		issue_write();
+	}
 
 	template <class Mutable_Buffers>
 	std::size_t read_some(Mutable_Buffers const& buffers, error_code& ec)
@@ -224,20 +255,15 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 			ec = boost::asio::error::would_block;
 			return 0;
 		}
-#if TORRENT_USE_ASSERTS
-		size_t buf_size = 0;
-#endif
 
-		for (auto i = buffer_sequence_begin(buffers)
-			, end(buffer_sequence_end(buffers)); i != end; ++i)
+		for (auto it = buffer_sequence_begin(buffers)
+			, end(buffer_sequence_end(buffers)); it != end; ++it)
 		{
-			add_read_buffer(i->data(), i->size());
-#if TORRENT_USE_ASSERTS
-			buf_size += i->size();
-#endif
+			if (it->size() == 0) continue;
+			m_read_buffer.emplace_back(*it);
+			m_read_buffer_size += it->size();
 		}
 		std::size_t ret = read_some(true);
-		TORRENT_ASSERT(ret <= buf_size);
 		TORRENT_ASSERT(ret > 0);
 		return ret;
 	}
@@ -272,43 +298,6 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 	}
 #endif
 
-	template <class Const_Buffers, class Handler>
-	void async_write_some(Const_Buffers const& buffers, Handler const& handler)
-	{
-		if (!m_data_channel)
-		{
-			post(m_io_context, std::bind<void>(handler
-				, boost::asio::error::not_connected, std::size_t(0)));
-			return;
-		}
-
-		TORRENT_ASSERT(!m_write_handler);
-		if (m_write_handler)
-		{
-			post(m_io_context, std::bind<void>(handler
-				, boost::asio::error::operation_not_supported, std::size_t(0)));
-			return;
-		}
-
-		std::size_t bytes_added = 0;
-		for (auto i = buffer_sequence_begin(buffers)
-			, end(buffer_sequence_end(buffers)); i != end; ++i)
-		{
-			if (i->size() == 0) continue;
-			add_write_buffer(i->data(), i->size());
-			bytes_added += i->size();
-		}
-		if (bytes_added == 0)
-		{
-			// if we're writing 0 bytes, post handler immediately
-			// asio's SSL layer depends on this behavior
-			post(m_io_context, std::bind<void>(handler, error_code(), std::size_t(0)));
-			return;
-		}
-		m_write_handler = handler;
-		issue_write();
-	}
-
 private:
 	void on_message(error_code const& ec, std::vector<char> data);
 	void cancel_handlers(error_code const&);
@@ -324,15 +313,8 @@ private:
 	std::queue<std::vector<char>> m_incoming;
 	std::size_t m_incoming_size = 0;
 
-	struct iovec_t
-	{
-		iovec_t(void* b, std::size_t l): buf(b), len(l) {}
-		void* buf;
-		std::size_t len;
-	};
-
-	std::vector<iovec_t> m_write_buffer;
-	std::vector<iovec_t> m_read_buffer;
+	std::vector<boost::asio::const_buffer> m_write_buffer;
+	std::vector<boost::asio::mutable_buffer> m_read_buffer;
 	std::size_t m_write_buffer_size = 0;
 	std::size_t m_read_buffer_size = 0;
 };

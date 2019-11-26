@@ -41,6 +41,9 @@ namespace aux {
 
 namespace ip = boost::asio::ip;
 
+using boost::asio::const_buffer;
+using boost::asio::mutable_buffer;
+
 rtc_stream::rtc_stream(io_context& ioc, rtc_stream_init const& init)
 	: m_io_context(ioc)
 	, m_peer_connection(init.peer_connection)
@@ -191,26 +194,6 @@ rtc_stream::endpoint_type rtc_stream::local_endpoint(error_code& ec) const
 			, std::stoul(addr->substr(pos+1)));
 }
 
-void rtc_stream::add_read_buffer(void* buf, std::size_t const len)
-{
-    TORRENT_ASSERT(len < INT_MAX);
-    TORRENT_ASSERT(len > 0);
-    TORRENT_ASSERT(buf);
-
-    m_read_buffer.emplace_back(buf, len);
-    m_read_buffer_size += len;
-}
-
-void rtc_stream::add_write_buffer(void const* buf, std::size_t const len)
-{
-    TORRENT_ASSERT(len < INT_MAX);
-    TORRENT_ASSERT(len > 0);
-    TORRENT_ASSERT(buf);
-
-    m_write_buffer.emplace_back(const_cast<void*>(buf), len);
-	m_write_buffer_size += len;
-}
-
 void rtc_stream::issue_read()
 {
 	TORRENT_ASSERT(m_read_handler);
@@ -223,32 +206,51 @@ void rtc_stream::issue_read()
 	{
 		post(m_io_context, std::bind(m_read_handler, error_code{}, bytes_read));
 		m_read_handler = nullptr;
-
-		m_read_buffer_size = 0;
         m_read_buffer.clear();
+		m_read_buffer_size = 0;
 	}
+}
+
+void rtc_stream::issue_write()
+{
+	TORRENT_ASSERT(m_write_handler);
+	TORRENT_ASSERT(m_write_buffer_size > 0);
+
+	if(!ensure_open()) return;
+
+	std::size_t bytes_written = 0;
+	auto target = m_write_buffer.begin();
+	while(target != m_write_buffer.end())
+	{
+		m_data_channel->send(static_cast<rtc::byte const*>(target->data()), target->size());
+		bytes_written += target->size();
+		TORRENT_ASSERT(m_write_buffer_size >= target->size());
+		m_write_buffer_size -= target->size();
+		target = m_write_buffer.erase(target);
+	}
+
+	post(m_io_context, std::bind(m_write_handler, error_code{}, bytes_written));
+	m_write_handler = nullptr;
 }
 
 std::size_t rtc_stream::read_some(bool const clear_buffers)
 {
 	if(!ensure_open()) return 0;
 
-	std::size_t ret = 0;
+	std::size_t bytes_read = 0;
 	auto target = m_read_buffer.begin();
 	while(!m_incoming.empty() && target != m_read_buffer.end())
 	{
 		auto& message = m_incoming.front();
-		std::size_t to_copy = std::min(message.size(), target->len);
-		std::memcpy(target->buf, message.data(), to_copy);
-		ret += to_copy;
-		target->buf = static_cast<char*>(target->buf) + to_copy;
-		TORRENT_ASSERT(target->len >= to_copy);
-		target->len -= to_copy;
+		std::size_t to_copy = std::min(message.size(), target->size());
+		std::memcpy(target->data(), message.data(), to_copy);
+		(*target)+= to_copy;
+		bytes_read += to_copy;
 		TORRENT_ASSERT(m_read_buffer_size >= to_copy);
 		m_read_buffer_size -= to_copy;
 
 		// Move to next target
-		if (target->len == 0) target = m_read_buffer.erase(target);
+		if (target->size() == 0) target = m_read_buffer.erase(target);
 
 		if (to_copy == message.size())
 		{
@@ -268,29 +270,7 @@ std::size_t rtc_stream::read_some(bool const clear_buffers)
 		m_read_buffer_size = 0;
 		m_read_buffer.clear();
 	}
-	return ret;
-}
-
-void rtc_stream::issue_write()
-{
-	TORRENT_ASSERT(m_write_handler);
-	TORRENT_ASSERT(m_write_buffer_size > 0);
-
-	if(!ensure_open()) return;
-
-	std::size_t bytes_written = 0;
-	auto target = m_write_buffer.begin();
-	while(target != m_write_buffer.end())
-	{
-		m_data_channel->send(static_cast<rtc::byte const*>(target->buf), target->len);
-		bytes_written += target->len;
-		TORRENT_ASSERT(m_write_buffer_size >= target->len);
-		m_write_buffer_size -= target->len;
-		target = m_write_buffer.erase(target);
-	}
-
-	post(m_io_context, std::bind(m_write_handler, error_code{}, bytes_written));
-	m_write_handler = nullptr;
+	return bytes_read;
 }
 
 }
