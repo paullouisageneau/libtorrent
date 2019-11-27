@@ -231,6 +231,8 @@ void rtc_stream::issue_write()
 
 	post(m_io_context, std::bind(m_write_handler, error_code{}, bytes_written));
 	m_write_handler = nullptr;
+	m_write_buffer.clear();
+	m_write_buffer_size = 0;
 }
 
 std::size_t rtc_stream::read_some()
