@@ -34,11 +34,11 @@ POSSIBILITY OF SUCH DAMAGE.
 #define TORRENT_RTC_STREAM_HPP_INCLUDED
 
 #include "libtorrent/aux_/packet_buffer.hpp"
+#include "libtorrent/aux_/throw.hpp"
 #include "libtorrent/close_reason.hpp"
 #include "libtorrent/error_code.hpp"
 #include "libtorrent/io.hpp"
 #include "libtorrent/io_context.hpp"
-#include "libtorrent/proxy_base.hpp"
 #include "libtorrent/time.hpp"
 #include "libtorrent/udp_socket.hpp"
 
@@ -144,7 +144,7 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 
 	void issue_read();
 	void issue_write();
-	std::size_t read_some(bool clear_buffers);
+	std::size_t read_some();
 
 	endpoint_type local_endpoint() const
 	{
@@ -263,8 +263,10 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 			m_read_buffer.emplace_back(*it);
 			m_read_buffer_size += it->size();
 		}
-		std::size_t ret = read_some(true);
+		std::size_t ret = read_some();
 		TORRENT_ASSERT(ret > 0);
+		m_read_buffer_size = 0;
+		m_read_buffer.clear();
 		return ret;
 	}
 
@@ -283,7 +285,7 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 		error_code ec;
 		std::size_t ret = read_some(buffers, ec);
 		if (ec)
-			boost::throw_exception(boost::system::system_error(ec));
+			aux::throw_ex<system_error>(ec);
 		return ret;
 	}
 

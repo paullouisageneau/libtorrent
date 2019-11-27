@@ -201,7 +201,7 @@ void rtc_stream::issue_read()
 
 	if(!ensure_open()) return;
 
-	std::size_t bytes_read = read_some(false);
+	std::size_t bytes_read = read_some();
 	if(bytes_read > 0)
 	{
 		post(m_io_context, std::bind(m_read_handler, error_code{}, bytes_read));
@@ -233,7 +233,7 @@ void rtc_stream::issue_write()
 	m_write_handler = nullptr;
 }
 
-std::size_t rtc_stream::read_some(bool const clear_buffers)
+std::size_t rtc_stream::read_some()
 {
 	if(!ensure_open()) return 0;
 
@@ -263,12 +263,6 @@ std::size_t rtc_stream::read_some(bool const clear_buffers)
 
 		TORRENT_ASSERT(m_incoming_size >= to_copy);
 		m_incoming_size -= to_copy;
-	}
-
-	if (clear_buffers)
-	{
-		m_read_buffer_size = 0;
-		m_read_buffer.clear();
 	}
 	return bytes_read;
 }
