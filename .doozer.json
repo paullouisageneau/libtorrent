@@ -1,5 +1,5 @@
 {
-  "submodules": ["simulation/libsimulator", "deps/try_signal"],
+  "submodules": ["simulation/libsimulator", "deps/try_signal", "deps/libdatachannel", "deps/json"],
   "targets": {
     "x86_64": {
       "buildenv": "bionic-amd64",
