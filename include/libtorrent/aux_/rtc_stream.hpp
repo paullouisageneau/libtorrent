@@ -42,6 +42,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/time.hpp"
 #include "libtorrent/udp_socket.hpp"
 
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <queue>
@@ -177,14 +178,14 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 	{
 		if (!is_open())
 		{
-			post(m_io_context, std::bind<void>(handler, boost::asio::error::not_connected, std::size_t(0)));
+			post(m_io_context, std::bind(handler, boost::asio::error::not_connected, std::size_t(0)));
 			return;
 		}
 
 		TORRENT_ASSERT(!m_read_handler);
 		if (m_read_handler)
 		{
-			post(m_io_context, std::bind<void>(handler, boost::asio::error::operation_not_supported, std::size_t(0)));
+			post(m_io_context, std::bind(handler, boost::asio::error::operation_not_supported, std::size_t(0)));
 			return;
 		}
 		for (auto it = buffer_sequence_begin(buffers)
@@ -197,10 +198,9 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 		if (m_read_buffer_size == 0)
 		{
 			// if we're reading 0 bytes, post handler immediately
-			post(m_io_context, std::bind<void>(handler, error_code(), std::size_t(0)));
+			post(m_io_context, std::bind(handler, error_code{}, std::size_t(0)));
 			return;
 		}
-
 		m_read_handler = handler;
 		issue_read();
 	}
@@ -208,9 +208,9 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 	template <class Const_Buffers, class Handler>
 	void async_write_some(Const_Buffers const& buffers, Handler const& handler)
 	{
-		if (!m_data_channel)
+		if (!is_open())
 		{
-			post(m_io_context, std::bind<void>(handler
+			post(m_io_context, std::bind(handler
 				, boost::asio::error::not_connected, std::size_t(0)));
 			return;
 		}
@@ -218,11 +218,10 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 		TORRENT_ASSERT(!m_write_handler);
 		if (m_write_handler)
 		{
-			post(m_io_context, std::bind<void>(handler
+			post(m_io_context, std::bind(handler
 				, boost::asio::error::operation_not_supported, std::size_t(0)));
 			return;
 		}
-
 		for (auto it = buffer_sequence_begin(buffers)
 			, end(buffer_sequence_end(buffers)); it != end; ++it)
 		{
@@ -233,7 +232,7 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 		if (m_write_buffer_size == 0)
 		{
 			// if we're writing 0 bytes, post handler immediately
-			post(m_io_context, std::bind<void>(handler, error_code(), std::size_t(0)));
+			post(m_io_context, std::bind(handler, error_code{}, std::size_t(0)));
 			return;
 		}
 		m_write_handler = handler;
@@ -301,24 +300,25 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 #endif
 
 private:
-	void on_message(error_code const& ec, std::vector<char> data);
-	void cancel_handlers(error_code const&);
+	void on_message(error_code const& ec);
+	void on_sent(error_code const& ec);
+	void cancel_handlers(error_code const& ec);
 	bool ensure_open();
 
-	std::function<void(error_code const&, std::size_t)> m_read_handler;
-	std::function<void(error_code const&, std::size_t)> m_write_handler;
+	std::size_t read_data(char const *data, std::size_t size);
 
 	io_context& m_io_context;
 	std::shared_ptr<rtc::PeerConnection> m_peer_connection;
 	std::shared_ptr<rtc::DataChannel> m_data_channel;
 
-	std::queue<std::vector<char>> m_incoming;
-	std::size_t m_incoming_size = 0;
-
+	std::function<void(error_code const&, std::size_t)> m_read_handler;
+	std::function<void(error_code const&, std::size_t)> m_write_handler;
 	std::vector<boost::asio::const_buffer> m_write_buffer;
 	std::vector<boost::asio::mutable_buffer> m_read_buffer;
 	std::size_t m_write_buffer_size = 0;
 	std::size_t m_read_buffer_size = 0;
+
+	std::vector<char> m_incoming;
 };
 
 }

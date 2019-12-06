@@ -95,7 +95,7 @@ struct rtc_offer
 };
 
 // This class handles client signaling for WebRTC DataChannels
-class TORRENT_EXTRA_EXPORT rtc_signaling
+class TORRENT_EXTRA_EXPORT rtc_signaling final : public std::enable_shared_from_this<rtc_signaling>
 {
 public:
 	using offers_handler = std::function<void(error_code const&, std::vector<rtc_offer> const&)>;

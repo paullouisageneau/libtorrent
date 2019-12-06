@@ -87,30 +87,34 @@ void rtc_signaling::generate_offers(int count, offers_handler handler)
 	debug_log("*** RTC signaling generating %d offers", count);
 
 	m_offer_batches.push({count, handler});
-
 	while(count--)
 	{
 		rtc_offer_id offer_id = generate_offer_id();
 		peer_id pid = aux::generate_peer_id(m_torrent->settings());
 
 		auto& conn = create_connection(offer_id, [this, offer_id, pid](error_code const& ec
-					, std::string const& sdp) {
+					, std::string const& sdp)
+		{
 			rtc_offer offer{std::move(offer_id), std::move(pid), sdp, {}};
 			post(m_io_context, std::bind(&rtc_signaling::on_generated_offer
-				, this
+				, shared_from_this()
                 , ec
                 , offer
             ));
 		});
 
 		auto dc = conn.peer_connection->createDataChannel("webtorrent");
-		dc->onOpen([this, offer_id, wdc = make_weak_ptr(dc)]() {
-			auto dc = wdc.lock();
-			if(!dc) return;
-
+		auto weak_this = make_weak_ptr(shared_from_this());
+		auto weak_dc = make_weak_ptr(dc);
+		dc->onOpen([this, weak_this, offer_id, weak_dc]()
+		{
 			// Warning: this is called from another thread
+			auto self = weak_this.lock();
+			auto dc = weak_dc.lock();
+			if(!self || !dc) return;
+
 			post(m_io_context, std::bind(&rtc_signaling::on_data_channel
-				, this
+				, self
 				, error_code{}
 				, offer_id
 				, dc
@@ -169,12 +173,18 @@ rtc_signaling::connection& rtc_signaling::create_connection(rtc_offer_id const& 
 	config.iceServers.emplace_back(RTC_STUN_SERVER);
 
 	auto pc = std::make_shared<rtc::PeerConnection>(config);
-	pc->onStateChange([this, offer_id](rtc::PeerConnection::State state)
+	auto weak_this = make_weak_ptr(shared_from_this());
+	auto weak_pc = make_weak_ptr(pc);
+	pc->onStateChange([this, weak_this, offer_id](rtc::PeerConnection::State state)
 	{
+		// Warning: this is called from another thread
+		auto self = weak_this.lock();
+        if (!self) return;
+
 		if(state == rtc::PeerConnection::State::Failed)
 		{
 			post(m_io_context, std::bind(&rtc_signaling::on_data_channel
-				, this
+				, self
 				, boost::asio::error::connection_refused
 				, offer_id
 				, nullptr
@@ -182,13 +192,14 @@ rtc_signaling::connection& rtc_signaling::create_connection(rtc_offer_id const& 
 		}
     });
 
-	pc->onGatheringStateChange([this, offer_id, handler, wpc = make_weak_ptr(pc)](
+	pc->onGatheringStateChange([this, weak_this, offer_id, handler, weak_pc](
 			rtc::PeerConnection::GatheringState state)
 	{
-		auto pc = wpc.lock();
-		if(!pc) return;
-
 		// Warning: this is called from another thread
+		auto self = weak_this.lock();
+		auto pc = weak_pc.lock();
+		if(!self || !pc) return;
+
 		if(state == rtc::PeerConnection::GatheringState::Complete)
 		{
 			auto description = *pc->localDescription();
@@ -196,12 +207,15 @@ rtc_signaling::connection& rtc_signaling::create_connection(rtc_offer_id const& 
 		}
 	});
 
-	pc->onDataChannel([this, offer_id](
+	pc->onDataChannel([this, weak_this, offer_id](
 				std::shared_ptr<rtc::DataChannel> dc)
 	{
-        // Warning: this is called from another thread
+		// Warning: this is called from another thread
+        auto self = weak_this.lock();
+        if (!self) return;
+
 		post(m_io_context, std::bind(&rtc_signaling::on_data_channel
-        	, this
+        	, self
         	, error_code{}
         	, offer_id
         	, dc
