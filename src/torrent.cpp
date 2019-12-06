@@ -7018,7 +7018,7 @@ bool is_downloading_state(int const st)
 				, [peerinfo] (peer_connection const* p)
 				{ return
 #if TORRENT_USE_RTC
-					!p->peer_info_struct()->is_rtc_addr &&
+					!(p->peer_info_struct() && p->peer_info_struct()->is_rtc_addr) &&
 #endif
 					!p->is_disconnecting() && p->remote() == peerinfo->ip();
 				});
