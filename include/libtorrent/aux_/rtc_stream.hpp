@@ -145,7 +145,7 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 
 	void issue_read();
 	void issue_write();
-	std::size_t read_some();
+	std::size_t read_some(error_code& ec);
 
 	endpoint_type local_endpoint() const
 	{
@@ -262,8 +262,8 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 			m_read_buffer.emplace_back(*it);
 			m_read_buffer_size += it->size();
 		}
-		std::size_t ret = read_some();
-		TORRENT_ASSERT(ret > 0);
+		std::size_t ret = read_some(ec);
+		TORRENT_ASSERT(ec || ret > 0);
 		m_read_buffer_size = 0;
 		m_read_buffer.clear();
 		return ret;

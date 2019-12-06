@@ -40,6 +40,7 @@ namespace libtorrent {
 namespace aux {
 
 namespace ip = boost::asio::ip;
+namespace errc = boost::system::errc;
 
 using boost::asio::const_buffer;
 using boost::asio::mutable_buffer;
@@ -223,12 +224,13 @@ void rtc_stream::issue_read()
 
 	if(!ensure_open()) return;
 
-	std::size_t bytes_read = read_some();
-	if(bytes_read > 0)
+	error_code ec;
+	std::size_t bytes_read = read_some(ec);
+	if(ec || bytes_read > 0) // error or synchronous read
 	{
-        m_read_buffer.clear();
+		m_read_buffer.clear();
 		m_read_buffer_size = 0;
-		post(m_io_context, std::bind(std::exchange(m_read_handler, nullptr), error_code{}, bytes_read));
+		post(m_io_context, std::bind(std::exchange(m_read_handler, nullptr), ec, bytes_read));
 	}
 }
 
@@ -243,8 +245,9 @@ void rtc_stream::issue_write()
 		m_data_channel->send(static_cast<rtc::byte const*>(target->data()), target->size());
 }
 
-std::size_t rtc_stream::read_some()
+std::size_t rtc_stream::read_some(error_code& ec)
 {
+	ec.clear();
 	if(!ensure_open()) return 0;
 
 	std::size_t bytes_read = 0;
@@ -262,7 +265,7 @@ std::size_t rtc_stream::read_some()
 		m_incoming.clear();
 	}
 
-	while(!m_read_buffer.empty())
+	while(!m_read_buffer.empty() && !ec)
 	{
 		auto message = m_data_channel->receive();
 		if(!message) break;
@@ -280,7 +283,7 @@ std::size_t rtc_stream::read_some()
 			},
 			[&](rtc::string const&)
 			{
-				// TODO: error
+				ec = errc::make_error_code(errc::bad_message);
 			}
         }
         , *message);
