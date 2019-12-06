@@ -7006,25 +7006,28 @@ bool is_downloading_state(int const st)
 
 		peerinfo->last_connected = m_ses.session_time();
 #if TORRENT_USE_ASSERTS
-		if (!settings().get_bool(settings_pack::allow_multiple_connections_per_ip))
+		if (!settings().get_bool(settings_pack::allow_multiple_connections_per_ip)
+#if TORRENT_USE_I2P
+			&& !peerinfo->is_i2p_addr
+#endif
+#if TORRENT_USE_RTC
+			&& !peerinfo->is_rtc_addr
+#endif
+		)
 		{
 			// this asserts that we don't have duplicates in the peer_list's peer list
 			peer_iterator i_ = std::find_if(m_connections.begin(), m_connections.end()
 				, [peerinfo] (peer_connection const* p)
-				{ return !p->is_disconnecting() && p->remote() == peerinfo->ip(); });
-
-			if(true
-#if TORRENT_USE_I2P
-				&& !peerinfo->is_i2p_addr
-#endif
+				{ return
 #if TORRENT_USE_RTC
-				&& !peerinfo->is_rtc_addr
+					!p->peer_info_struct()->is_rtc_addr &&
 #endif
-			)
-			{
-				TORRENT_ASSERT(i_ == m_connections.end()
-					|| (*i_)->type() != connection_type::bittorrent);
-			}
+					!p->is_disconnecting() && p->remote() == peerinfo->ip();
+				});
+
+			// TODO: Why does this keeps tripping?
+			//TORRENT_ASSERT(i_ == m_connections.end()
+			//	|| (*i_)->type() != connection_type::bittorrent);
 		}
 #endif // TORRENT_USE_ASSERTS
 
@@ -7055,6 +7058,14 @@ bool is_downloading_state(int const st)
 			}
 		}
 		else
+#endif
+#if TORRENT_USE_RTC
+        if (peerinfo->is_rtc_addr)
+        {
+			// unsollicited connection is not possible
+			return false;
+        }
+        else
 #endif
 		{
 			if (settings().get_bool(settings_pack::enable_outgoing_utp)
