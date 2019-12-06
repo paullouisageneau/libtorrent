@@ -7012,14 +7012,19 @@ bool is_downloading_state(int const st)
 			peer_iterator i_ = std::find_if(m_connections.begin(), m_connections.end()
 				, [peerinfo] (peer_connection const* p)
 				{ return !p->is_disconnecting() && p->remote() == peerinfo->ip(); });
+
+			if(true
 #if TORRENT_USE_I2P
-			TORRENT_ASSERT(i_ == m_connections.end()
-				|| (*i_)->type() != connection_type::bittorrent
-				|| peerinfo->is_i2p_addr);
-#else
-			TORRENT_ASSERT(i_ == m_connections.end()
-				|| (*i_)->type() != connection_type::bittorrent);
+				&& !peerinfo->is_i2p_addr
 #endif
+#if TORRENT_USE_RTC
+				&& !peerinfo->is_rtc_addr
+#endif
+			)
+			{
+				TORRENT_ASSERT(i_ == m_connections.end()
+					|| (*i_)->type() != connection_type::bittorrent);
+			}
 		}
 #endif // TORRENT_USE_ASSERTS
 
