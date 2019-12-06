@@ -410,8 +410,9 @@ void websocket_tracker_connection::on_read(error_code const& ec, std::size_t /* 
 	if(payload.find("interval") != payload.end())
 	{
 		tracker_response resp;
-		resp.interval = seconds32{payload.value<int>("interval", 120)};
-		resp.min_interval = seconds32{payload.value<int>("min_interval", 30)};
+		resp.interval = std::max(seconds32{payload.value<int>("interval", 120)}
+			, seconds32{m_man.settings().get_int(settings_pack::min_websocket_announce_interval)});
+		resp.min_interval = seconds32{payload.value<int>("min_interval", 60)};
 		resp.complete = payload.value<int>("complete", -1);
 		resp.incomplete = payload.value<int>("incomplete", -1);
 		resp.downloaded = payload.value<int>("downloaded", -1);

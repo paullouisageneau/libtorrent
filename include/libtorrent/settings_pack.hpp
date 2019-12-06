@@ -1306,6 +1306,13 @@ namespace aux {
 			// trackers.
 			min_announce_interval,
 
+#if TORRENT_USE_RTC
+			// this is the minimum allowed announce interval for a WebSocket
+			// tracker used by WebTorrent to signal WebRTC connections. This is
+			// specified in seconds and is used as a sanity check on what is
+			// returned from a tracker.
+			min_websocket_announce_interval,
+#endif
 			// this is the number of seconds a torrent is considered active after
 			// it was started, regardless of upload and download speed. This is so
 			// that newly started torrents are not considered inactive until they

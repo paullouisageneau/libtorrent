@@ -3204,10 +3204,8 @@ bool is_downloading_state(int const st)
 		protocol_version const v = r.info_hash == torrent_file().info_hash().v1
 			? protocol_version::V1 : protocol_version::V2;
 
-		auto const interval = std::max(resp.interval, seconds32(
-			settings().get_int(settings_pack::min_announce_interval)));
-
 		aux::announce_entry* ae = find_tracker(r.url);
+
 		tcp::endpoint local_endpoint;
 		if (ae)
 		{
@@ -3231,7 +3229,7 @@ bool is_downloading_state(int const st)
 					m_complete_sent = true;
 				}
 				ae->verified = true;
-				a.next_announce = now + interval;
+				a.next_announce = now + resp.interval;
 				a.min_announce = now + resp.min_interval;
 				a.updating = false;
 				a.fails = 0;
@@ -3269,7 +3267,7 @@ bool is_downloading_state(int const st)
 			}
 			debug_log("TRACKER RESPONSE [ interval: %d | min-interval: %d | "
 				"external ip: %s | resolved to: %s | we connected to: %s ]"
-				, interval.count()
+				, resp.interval.count()
 				, resp.min_interval.count()
 				, print_address(resp.external_ip).c_str()
 				, resolved_to.c_str()
