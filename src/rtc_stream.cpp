@@ -87,6 +87,12 @@ rtc_stream::rtc_stream(rtc_stream&& rhs) noexcept
 rtc_stream::~rtc_stream()
 {
 	close();
+
+	if(m_data_channel)
+	{
+		m_data_channel->onAvailable(nullptr);
+		m_data_channel->onSent(nullptr);
+	}
 }
 
 void rtc_stream::on_message(error_code const& ec)
@@ -123,7 +129,8 @@ close_reason_t rtc_stream::get_close_reason()
 
 void rtc_stream::close()
 {
-	if(m_data_channel) m_data_channel->close();
+	if(m_data_channel && !m_data_channel->isClosed())
+		m_data_channel->close();
 
 	cancel_handlers(boost::asio::error::operation_aborted);
 }
@@ -157,7 +164,7 @@ bool rtc_stream::ensure_open()
 
 bool rtc_stream::is_open() const
 {
-	return m_data_channel && !m_data_channel->isClosed();
+	return m_data_channel && m_data_channel->isOpen();
 }
 
 std::size_t rtc_stream::available() const
