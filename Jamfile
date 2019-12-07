@@ -819,6 +819,10 @@ SOURCES =
 	mmap_storage
 	posix_disk_io
 	posix_storage
+	rtc_signaling
+	rtc_stream
+	websocket_stream
+	websocket_tracker_connection
 
 # -- extensions --
 	ut_pex
