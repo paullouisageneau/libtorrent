@@ -33,21 +33,6 @@ POSSIBILITY OF SUCH DAMAGE.
 #ifndef TORRENT_WEBSOCKET_STREAM_HPP_INCLUDED
 #define TORRENT_WEBSOCKET_STREAM_HPP_INCLUDED
 
-#ifdef TORRENT_USE_OPENSSL
-// there is no forward declaration header for asio
-namespace boost {
-namespace asio {
-namespace ssl {
-	class context;
-}
-}
-}
-#endif
-
-#include <functional>
-#include <vector>
-#include <string>
-
 #include "libtorrent/assert.hpp"
 #include "libtorrent/close_reason.hpp"
 #include "libtorrent/error_code.hpp"
@@ -63,10 +48,17 @@ namespace ssl {
 #include <boost/beast/websocket.hpp>
 #include <boost/beast/websocket/ssl.hpp>
 
+#include <functional>
+#include <vector>
+#include <string>
+
 namespace libtorrent {
 namespace aux {
 
 namespace websocket = boost::beast::websocket;
+namespace ssl = boost::asio::ssl;
+
+using tcp = boost::asio::ip::tcp;
 
 struct TORRENT_EXTRA_EXPORT websocket_stream
 	: std::enable_shared_from_this<websocket_stream>
