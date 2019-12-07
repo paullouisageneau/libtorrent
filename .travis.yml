@@ -243,8 +243,8 @@ script:
       python ~/cpplint.py --extensions=cpp --headers=hpp --filter=-,+runtime/explicit,+whitespace/end_of_line --linelength=90 test/*.{cpp,hpp} src/*.cpp include/libtorrent/*.hpp include/libtorrent/kademlia/*.hpp src/kademlia/*.cpp include/libtorrent/aux_/*.hpp include/libtorrent/extensions/*.hpp simulation/*.{cpp,hpp} tools/*.{cpp,hpp} examples/*.{cpp,hpp};
     fi'
   - 'if [ "$pylint" == "1" ]; then
-      flake8 --max-line-length=120;
-      python3 -m flake8 --max-line-length=120;
+      flake8 --max-line-length=120 --exclude deps/libdatachannel,deps/json;
+      python3 -m flake8 --max-line-length=120 --exclude deps/libdatachannel,deps/json;
     fi'
   - 'if [ "$sonar_scan" == "1" ]; then
        build-wrapper-linux-x86-64 --out-dir bw-output ${B2} -a -j2 cxxstd=17 optimization=off crypto=$crypto deprecated-functions=off $toolset variant=$variant -l300 &&
