@@ -278,7 +278,8 @@ void websocket_tracker_connection::do_read()
 {
 	if(!m_websocket->is_open()) return;
 
-	m_read_buffer.clear();
+	// Can be replaced by m_read_buffer.clear() with boost 1.70+
+	if(m_read_buffer.size() > 0) m_read_buffer.consume(m_read_buffer.size());
 
 	std::shared_ptr<websocket_tracker_connection> self(shared_from_this());
 	m_websocket->async_read(m_read_buffer
@@ -388,7 +389,7 @@ void websocket_tracker_connection::on_read(error_code const& ec, std::size_t /* 
 		auto pid = to_latin1(payload["peer_id"].get<std::string>());
 
 		std::shared_ptr<websocket_tracker_connection> self(shared_from_this());
-		aux::rtc_offer offer{span<char const>(id), peer_id(pid), std::move(sdp)
+		aux::rtc_offer offer{aux::rtc_offer_id(span<char const>(id)), peer_id(pid), std::move(sdp)
 			, [this, info_hash, id, pid](peer_id const& local_pid, aux::rtc_answer const& answer) {
 				queue_answer({std::move(info_hash), std::move(local_pid), std::move(answer)});
 			}
@@ -403,7 +404,7 @@ void websocket_tracker_connection::on_read(error_code const& ec, std::size_t /* 
 		auto id = to_latin1(payload["offer_id"].get<std::string>());
 		auto pid = to_latin1(payload["peer_id"].get<std::string>());
 
-		aux::rtc_answer answer{span<char const>(id), peer_id(pid), std::move(sdp)};
+		aux::rtc_answer answer{aux::rtc_offer_id(span<char const>(id)), peer_id(pid), std::move(sdp)};
 		cb->on_rtc_answer(answer);
 	}
 
