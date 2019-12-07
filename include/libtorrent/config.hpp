@@ -474,7 +474,11 @@ POSSIBILITY OF SUCH DAMAGE.
 #endif
 
 #ifndef TORRENT_USE_RTC
+#ifdef TORRENT_USE_OPENSSL
 #define TORRENT_USE_RTC 1
+#else
+#define TORRENT_USE_RTC 0
+#endif
 #endif
 
 #ifndef TORRENT_HAS_SYMLINK
