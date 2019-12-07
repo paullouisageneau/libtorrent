@@ -68,7 +68,7 @@ const int RTC_OFFER_ID_LEN = 16;
 
 struct rtc_offer_id : std::vector<char> {
 	rtc_offer_id() : std::vector<char>(RTC_OFFER_ID_LEN, '\0') {}
-	rtc_offer_id(span<char const> s) : std::vector<char>(s.begin(), s.end()) {}
+	explicit rtc_offer_id(span<char const> s) : std::vector<char>(s.begin(), s.end()) {}
 };
 
 struct rtc_offer_id_hash
@@ -124,7 +124,7 @@ public:
 private:
 	struct connection
 	{
-		connection(io_context& ioc) : timer(ioc) {}
+		explicit connection(io_context& ioc) : timer(ioc) {}
 
 		std::shared_ptr<rtc::PeerConnection> peer_connection;
 		std::shared_ptr<rtc::DataChannel> data_channel;
