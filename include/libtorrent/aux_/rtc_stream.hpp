@@ -81,6 +81,7 @@ public:
 	rtc_stream_impl& operator=(rtc_stream_impl&&) noexcept = delete;
 	rtc_stream_impl(rtc_stream_impl&&) noexcept = delete;
 
+	void init();
 	void close();
 
 	bool is_open() const;
@@ -203,10 +204,10 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 	void open(Protocol const&)
 	{ /* dummy */ }
 
-	void cancel() { m_impl->cancel_handlers(boost::asio::error::operation_aborted); }
+	void cancel() { if(m_impl) m_impl->cancel_handlers(boost::asio::error::operation_aborted); }
 	void cancel(error_code&) { cancel(); }
 
-	void close() { return m_impl->close(); }
+	void close() { if(m_impl) m_impl->close(); }
 	void close(error_code const&) { close(); }
 
 	close_reason_t get_close_reason() { return close_reason_t::none; }
@@ -214,12 +215,20 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 	bool is_open() const { return m_impl && m_impl->is_open(); }
 
 	endpoint_type local_endpoint() const { error_code ec; return local_endpoint(ec); }
-	endpoint_type local_endpoint(error_code& ec) const { return m_impl->local_endpoint(ec); }
+	endpoint_type local_endpoint(error_code& ec) const
+	{
+		if(!m_impl) { ec = boost::asio::error::not_connected; return endpoint_type{}; }
+		return m_impl->local_endpoint(ec);
+	}
 
 	endpoint_type remote_endpoint() const { error_code ec; return remote_endpoint(ec); }
-	endpoint_type remote_endpoint(error_code& ec) const { return m_impl->remote_endpoint(ec); }
+	endpoint_type remote_endpoint(error_code& ec) const
+    {
+		if(!m_impl) { ec = boost::asio::error::not_connected; return endpoint_type{}; }
+		return m_impl->remote_endpoint(ec);
+	}
 
-	std::size_t available() const { return m_impl->available(); }
+	std::size_t available() const { return m_impl ? m_impl->available() : 0; }
 	std::size_t available(error_code&) const { return available(); }
 
 	template <class Handler>

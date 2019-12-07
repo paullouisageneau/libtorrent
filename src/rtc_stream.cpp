@@ -50,29 +50,61 @@ rtc_stream_impl::rtc_stream_impl(io_context& ioc, rtc_stream_init const& init)
 	, m_peer_connection(init.peer_connection)
     , m_data_channel(init.data_channel)
 {
-	m_data_channel->onAvailable([this]() {
-		// Warning: this is called from another thread
-		post(m_io_context, std::bind(&rtc_stream_impl::on_message
-                  , shared_from_this()
-                  , error_code{}
-        ));
-	});
 
-	m_data_channel->onSent([this]() {
-		// Warning: this is called from another thread
-		post(m_io_context, std::bind(&rtc_stream_impl::on_sent
-                  , shared_from_this()
-                  , error_code{}
-        ));
-	});
 }
 
 rtc_stream_impl::~rtc_stream_impl()
 {
-	close();
 
-	m_data_channel->onAvailable(nullptr);
-	m_data_channel->onSent(nullptr);
+}
+
+void rtc_stream_impl::init()
+{
+	auto weak_this = weak_from_this();
+
+	m_data_channel->onAvailable([this, weak_this]()
+	{
+		// Warning: this is called from another thread
+		auto self = weak_this.lock();
+		if(!self) return;
+
+		post(m_io_context, std::bind(&rtc_stream_impl::on_message
+			, self
+			, error_code{}
+		));
+	});
+
+	m_data_channel->onSent([this, weak_this]()
+	{
+		// Warning: this is called from another thread
+		auto self = weak_this.lock();
+		if(!self) return;
+
+		post(m_io_context, std::bind(&rtc_stream_impl::on_sent
+			, self
+			, error_code{}
+		));
+	});
+
+	m_data_channel->onClosed([this, weak_this]()
+	{
+		// Warning: this is called from another thread
+		auto self = weak_this.lock();
+		if(!self) return;
+
+		post(m_io_context, std::bind(&rtc_stream_impl::cancel_handlers
+			, self
+			, boost::asio::error::connection_reset
+		));
+	});
+}
+
+void rtc_stream_impl::close()
+{
+	if(m_data_channel && !m_data_channel->isClosed())
+		m_data_channel->close();
+
+	cancel_handlers(boost::asio::error::operation_aborted);
 }
 
 void rtc_stream_impl::on_message(error_code const& ec)
@@ -99,14 +131,6 @@ void rtc_stream_impl::on_sent(error_code const& ec)
 	m_write_buffer.clear();
 	m_write_buffer_size = 0;
     post(m_io_context, std::bind(std::exchange(m_write_handler, nullptr), ec, bytes_written));
-}
-
-void rtc_stream_impl::close()
-{
-	if(m_data_channel && !m_data_channel->isClosed())
-		m_data_channel->close();
-
-	cancel_handlers(boost::asio::error::operation_aborted);
 }
 
 bool rtc_stream_impl::is_open() const
@@ -301,7 +325,7 @@ rtc_stream::rtc_stream(io_context& ioc, rtc_stream_init const& init)
       : m_io_context(ioc)
       , m_impl(std::make_shared<rtc_stream_impl>(ioc, init))
 {
-
+	m_impl->init();
 }
 
 rtc_stream::rtc_stream(rtc_stream&& rhs) noexcept
@@ -312,7 +336,7 @@ rtc_stream::rtc_stream(rtc_stream&& rhs) noexcept
 
 rtc_stream::~rtc_stream()
 {
-
+	if(m_impl) m_impl->close();
 }
 
 }
