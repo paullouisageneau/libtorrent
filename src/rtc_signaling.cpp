@@ -104,9 +104,8 @@ void rtc_signaling::generate_offers(int count, offers_handler handler)
 		});
 
 		auto dc = conn.peer_connection->createDataChannel("webtorrent");
-		auto weak_this = make_weak_ptr(shared_from_this());
 		auto weak_dc = make_weak_ptr(dc);
-		dc->onOpen([this, weak_this, offer_id, weak_dc]()
+		dc->onOpen([this, weak_this = weak_from_this(), offer_id, weak_dc]()
 		{
 			// Warning: this is called from another thread
 			auto self = weak_this.lock();
@@ -173,9 +172,8 @@ rtc_signaling::connection& rtc_signaling::create_connection(rtc_offer_id const& 
 	config.iceServers.emplace_back(RTC_STUN_SERVER);
 
 	auto pc = std::make_shared<rtc::PeerConnection>(config);
-	auto weak_this = make_weak_ptr(shared_from_this());
 	auto weak_pc = make_weak_ptr(pc);
-	pc->onStateChange([this, weak_this, offer_id](rtc::PeerConnection::State state)
+	pc->onStateChange([this, weak_this = weak_from_this(), offer_id](rtc::PeerConnection::State state)
 	{
 		// Warning: this is called from another thread
 		auto self = weak_this.lock();
@@ -192,7 +190,7 @@ rtc_signaling::connection& rtc_signaling::create_connection(rtc_offer_id const& 
 		}
     });
 
-	pc->onGatheringStateChange([this, weak_this, offer_id, handler, weak_pc](
+	pc->onGatheringStateChange([this, weak_this = weak_from_this(), offer_id, handler, weak_pc](
 			rtc::PeerConnection::GatheringState state)
 	{
 		// Warning: this is called from another thread
@@ -207,7 +205,7 @@ rtc_signaling::connection& rtc_signaling::create_connection(rtc_offer_id const& 
 		}
 	});
 
-	pc->onDataChannel([this, weak_this, offer_id](
+	pc->onDataChannel([this, weak_this = weak_from_this(), offer_id](
 				std::shared_ptr<rtc::DataChannel> dc)
 	{
 		// Warning: this is called from another thread

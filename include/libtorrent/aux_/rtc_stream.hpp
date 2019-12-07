@@ -68,12 +68,84 @@ struct TORRENT_EXTRA_EXPORT rtc_stream_init
 	std::shared_ptr<rtc::DataChannel> data_channel;
 };
 
+class rtc_stream_impl : public std::enable_shared_from_this<rtc_stream_impl>
+{
+public:
+	using endpoint_type = tcp::socket::endpoint_type;
+	using protocol_type = tcp::socket::protocol_type;
+
+	explicit rtc_stream_impl(io_context& ioc, rtc_stream_init const& init);
+	~rtc_stream_impl();
+	rtc_stream_impl& operator=(rtc_stream_impl const&) = delete;
+	rtc_stream_impl(rtc_stream_impl const&) = delete;
+	rtc_stream_impl& operator=(rtc_stream_impl&&) noexcept = delete;
+	rtc_stream_impl(rtc_stream_impl&&) noexcept = delete;
+
+	void close();
+
+	bool is_open() const;
+	std::size_t available() const;
+
+	endpoint_type local_endpoint(error_code& ec) const;
+	endpoint_type remote_endpoint(error_code& ec) const;
+
+	void cancel_handlers(error_code const& ec);
+
+	bool has_read_handler() const { return m_read_handler ? true : false; }
+	bool has_write_handler() const { return m_write_handler ? true : false; }
+	template <class Handler>
+	void set_read_handler(Handler const& handler) { m_read_handler = handler; }
+	template <class Handler>
+	void set_write_handler(Handler const& handler) { m_write_handler = handler; }
+
+	template <class Mutable_Buffer>
+	std::size_t add_read_buffer(Mutable_Buffer const& buffer) {
+		if(buffer.size() == 0) return 0;
+		m_read_buffer.push_back(buffer);
+		m_read_buffer_size += buffer.size();
+		return buffer.size();
+	}
+
+	template <class Const_Buffer>
+	std::size_t add_write_buffer(Const_Buffer const& buffer) {
+		if(buffer.size() == 0) return 0;
+		m_write_buffer.push_back(buffer);
+		m_write_buffer_size += buffer.size();
+		return buffer.size();
+	}
+
+	void issue_read();
+	void issue_write();
+	std::size_t read_some(error_code& ec);
+	void clear_read_buffers();
+
+private:
+	void on_message(error_code const& ec);
+	void on_sent(error_code const& ec);
+	bool ensure_open();
+
+	std::size_t read_data(char const *data, std::size_t size);
+
+	io_context& m_io_context;
+	std::shared_ptr<rtc::PeerConnection> m_peer_connection;
+	std::shared_ptr<rtc::DataChannel> m_data_channel;
+
+	std::function<void(error_code const&, std::size_t)> m_read_handler;
+	std::function<void(error_code const&, std::size_t)> m_write_handler;
+	std::vector<boost::asio::const_buffer> m_write_buffer;
+	std::vector<boost::asio::mutable_buffer> m_read_buffer;
+	std::size_t m_write_buffer_size = 0;
+	std::size_t m_read_buffer_size = 0;
+
+	std::vector<char> m_incoming;
+};
+
 // This is the user-level stream interface to WebRTC DataChannels.
 struct TORRENT_EXTRA_EXPORT rtc_stream
 {
 	using lowest_layer_type = rtc_stream;
-	using endpoint_type = tcp::socket::endpoint_type;
-	using protocol_type = tcp::socket::protocol_type;
+	using endpoint_type = rtc_stream_impl::endpoint_type;
+	using protocol_type = rtc_stream_impl::protocol_type;
 
 	using executor_type = tcp::socket::executor_type;
 	executor_type get_executor() { return m_io_context.get_executor(); }
@@ -131,47 +203,28 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 	void open(Protocol const&)
 	{ /* dummy */ }
 
-	void cancel(error_code&)
-	{
-		cancel_handlers(boost::asio::error::operation_aborted);
-	}
+	void cancel() { m_impl->cancel_handlers(boost::asio::error::operation_aborted); }
+	void cancel(error_code&) { cancel(); }
 
-	void close();
+	void close() { return m_impl->close(); }
 	void close(error_code const&) { close(); }
 
-	close_reason_t get_close_reason();
+	close_reason_t get_close_reason() { return close_reason_t::none; }
 
-	bool is_open() const;
+	bool is_open() const { return m_impl && m_impl->is_open(); }
 
-	void issue_read();
-	void issue_write();
-	std::size_t read_some(error_code& ec);
+	endpoint_type local_endpoint() const { error_code ec; return local_endpoint(ec); }
+	endpoint_type local_endpoint(error_code& ec) const { return m_impl->local_endpoint(ec); }
 
-	endpoint_type local_endpoint() const
-	{
-		error_code ec;
-		return local_endpoint(ec);
-	}
+	endpoint_type remote_endpoint() const { error_code ec; return remote_endpoint(ec); }
+	endpoint_type remote_endpoint(error_code& ec) const { return m_impl->remote_endpoint(ec); }
 
-	endpoint_type local_endpoint(error_code& ec) const;
-
-	endpoint_type remote_endpoint() const
-	{
-		error_code ec;
-		return remote_endpoint(ec);
-	}
-
-	endpoint_type remote_endpoint(error_code& ec) const;
-
-	std::size_t available() const;
-	std::size_t available(error_code& /*ec*/) const { return available(); }
+	std::size_t available() const { return m_impl->available(); }
+	std::size_t available(error_code&) const { return available(); }
 
 	template <class Handler>
-	void async_connect(endpoint_type const& /*endpoint*/, Handler const& handler)
-	{
-		// Dummy
-		handler(error_code{});
-	}
+	void async_connect(endpoint_type const&, Handler const& handler)
+	{ /* dummy */ handler(error_code{}); }
 
 	template <class Mutable_Buffers, class Handler>
 	void async_read_some(Mutable_Buffers const& buffers, Handler const& handler)
@@ -182,27 +235,27 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 			return;
 		}
 
-		TORRENT_ASSERT(!m_read_handler);
-		if (m_read_handler)
+		TORRENT_ASSERT(!m_impl->has_read_handler());
+		if (m_impl->has_read_handler())
 		{
 			post(m_io_context, std::bind(handler, boost::asio::error::operation_not_supported, std::size_t(0)));
 			return;
 		}
+
+		std::size_t size = 0;
 		for (auto it = buffer_sequence_begin(buffers)
 			, end(buffer_sequence_end(buffers)); it != end; ++it)
-		{
-			if (it->size() == 0) continue;
-			m_read_buffer.emplace_back(*it);
-			m_read_buffer_size += it->size();
-		}
-		if (m_read_buffer_size == 0)
+			size += m_impl->add_read_buffer(*it);
+
+		if (size == 0)
 		{
 			// if we're reading 0 bytes, post handler immediately
 			post(m_io_context, std::bind(handler, error_code{}, std::size_t(0)));
 			return;
 		}
-		m_read_handler = handler;
-		issue_read();
+
+		m_impl->set_read_handler(handler);
+		m_impl->issue_read();
 	}
 
 	template <class Const_Buffers, class Handler>
@@ -215,34 +268,33 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 			return;
 		}
 
-		TORRENT_ASSERT(!m_write_handler);
-		if (m_write_handler)
+		TORRENT_ASSERT(!m_impl->has_write_handler());
+		if (m_impl->has_write_handler())
 		{
 			post(m_io_context, std::bind(handler
 				, boost::asio::error::operation_not_supported, std::size_t(0)));
 			return;
 		}
+
+		std::size_t size = 0;
 		for (auto it = buffer_sequence_begin(buffers)
 			, end(buffer_sequence_end(buffers)); it != end; ++it)
-		{
-			if (it->size() == 0) continue;
-			m_write_buffer.emplace_back(*it);
-			m_write_buffer_size += it->size();
-		}
-		if (m_write_buffer_size == 0)
+			size += m_impl->add_write_buffer(*it);
+
+		if (size == 0)
 		{
 			// if we're writing 0 bytes, post handler immediately
 			post(m_io_context, std::bind(handler, error_code{}, std::size_t(0)));
 			return;
 		}
-		m_write_handler = handler;
-		issue_write();
+
+		m_impl->set_write_handler(handler);
+		m_impl->issue_write();
 	}
 
 	template <class Mutable_Buffers>
 	std::size_t read_some(Mutable_Buffers const& buffers, error_code& ec)
 	{
-		TORRENT_ASSERT(!m_read_handler);
 		if (!is_open())
 		{
 			ec = boost::asio::error::not_connected;
@@ -255,17 +307,15 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 			return 0;
 		}
 
+		TORRENT_ASSERT(!m_impl->has_read_handler());
+
 		for (auto it = buffer_sequence_begin(buffers)
 			, end(buffer_sequence_end(buffers)); it != end; ++it)
-		{
-			if (it->size() == 0) continue;
-			m_read_buffer.emplace_back(*it);
-			m_read_buffer_size += it->size();
-		}
-		std::size_t ret = read_some(ec);
+			m_impl->add_read_buffer(*it);
+
+		std::size_t ret = m_impl->read_some(ec);
+		m_impl->clear_read_buffers();
 		TORRENT_ASSERT(ec || ret > 0);
-		m_read_buffer_size = 0;
-		m_read_buffer.clear();
 		return ret;
 	}
 
@@ -300,25 +350,8 @@ struct TORRENT_EXTRA_EXPORT rtc_stream
 #endif
 
 private:
-	void on_message(error_code const& ec);
-	void on_sent(error_code const& ec);
-	void cancel_handlers(error_code const& ec);
-	bool ensure_open();
-
-	std::size_t read_data(char const *data, std::size_t size);
-
 	io_context& m_io_context;
-	std::shared_ptr<rtc::PeerConnection> m_peer_connection;
-	std::shared_ptr<rtc::DataChannel> m_data_channel;
-
-	std::function<void(error_code const&, std::size_t)> m_read_handler;
-	std::function<void(error_code const&, std::size_t)> m_write_handler;
-	std::vector<boost::asio::const_buffer> m_write_buffer;
-	std::vector<boost::asio::mutable_buffer> m_read_buffer;
-	std::size_t m_write_buffer_size = 0;
-	std::size_t m_read_buffer_size = 0;
-
-	std::vector<char> m_incoming;
+	std::shared_ptr<rtc_stream_impl> m_impl;
 };
 
 }

@@ -45,64 +45,43 @@ namespace errc = boost::system::errc;
 using boost::asio::const_buffer;
 using boost::asio::mutable_buffer;
 
-rtc_stream::rtc_stream(io_context& ioc, rtc_stream_init const& init)
+rtc_stream_impl::rtc_stream_impl(io_context& ioc, rtc_stream_init const& init)
 	: m_io_context(ioc)
 	, m_peer_connection(init.peer_connection)
     , m_data_channel(init.data_channel)
 {
 	m_data_channel->onAvailable([this]() {
 		// Warning: this is called from another thread
-		post(m_io_context, std::bind(&rtc_stream::on_message
-                  , this
+		post(m_io_context, std::bind(&rtc_stream_impl::on_message
+                  , shared_from_this()
                   , error_code{}
         ));
 	});
 
 	m_data_channel->onSent([this]() {
 		// Warning: this is called from another thread
-		post(m_io_context, std::bind(&rtc_stream::on_sent
-                  , this
+		post(m_io_context, std::bind(&rtc_stream_impl::on_sent
+                  , shared_from_this()
                   , error_code{}
         ));
 	});
 }
 
-rtc_stream::rtc_stream(rtc_stream&& rhs) noexcept
-	: rtc_stream(rhs.m_io_context, { rhs.m_peer_connection, rhs.m_data_channel })
-{
-	rhs.m_peer_connection.reset();
-	rhs.m_data_channel.reset();
-
-	std::swap(m_read_handler, rhs.m_read_handler);
-	std::swap(m_read_buffer, rhs.m_read_buffer);
-	std::swap(m_read_buffer_size, rhs.m_read_buffer_size);
-
-	std::swap(m_write_handler, rhs.m_write_handler);
-	std::swap(m_write_buffer, rhs.m_write_buffer);
-	std::swap(m_write_buffer_size, rhs.m_write_buffer_size);
-
-	std::swap(m_incoming, rhs.m_incoming);
-}
-
-rtc_stream::~rtc_stream()
+rtc_stream_impl::~rtc_stream_impl()
 {
 	close();
 
-	if(m_data_channel)
-	{
-		m_data_channel->onAvailable(nullptr);
-		m_data_channel->onSent(nullptr);
-	}
+	m_data_channel->onAvailable(nullptr);
+	m_data_channel->onSent(nullptr);
 }
 
-void rtc_stream::on_message(error_code const& ec)
+void rtc_stream_impl::on_message(error_code const& ec)
 {
 	if(!m_read_handler) return;
 
 	if(ec)
 	{
-		m_read_buffer.clear();
-		m_read_buffer_size = 0;
+		clear_read_buffers();
 		post(m_io_context, std::bind(std::exchange(m_read_handler, nullptr), ec, 0));
 		return;
 	}
@@ -111,7 +90,7 @@ void rtc_stream::on_message(error_code const& ec)
 	issue_read();
 }
 
-void rtc_stream::on_sent(error_code const& ec)
+void rtc_stream_impl::on_sent(error_code const& ec)
 {
 	if(!m_write_handler) return;
 
@@ -122,12 +101,7 @@ void rtc_stream::on_sent(error_code const& ec)
     post(m_io_context, std::bind(std::exchange(m_write_handler, nullptr), ec, bytes_written));
 }
 
-close_reason_t rtc_stream::get_close_reason()
-{
-	return close_reason_t::none;
-}
-
-void rtc_stream::close()
+void rtc_stream_impl::close()
 {
 	if(m_data_channel && !m_data_channel->isClosed())
 		m_data_channel->close();
@@ -135,44 +109,17 @@ void rtc_stream::close()
 	cancel_handlers(boost::asio::error::operation_aborted);
 }
 
-void rtc_stream::cancel_handlers(error_code const& ec)
-{
-	TORRENT_ASSERT(ec);
-
-	auto read_handler = std::exchange(m_read_handler, nullptr);
-	auto write_handler = std::exchange(m_write_handler, nullptr);
-
-	m_read_handler = nullptr;
-	m_read_buffer.clear();
-	m_read_buffer_size = 0;
-
-	m_write_handler = nullptr;
-	m_write_buffer.clear();
-	m_write_buffer_size = 0;
-
-	if(read_handler) read_handler(ec, 0);
-	if(write_handler) write_handler(ec, 0);
-}
-
-bool rtc_stream::ensure_open()
-{
-	if(is_open()) return true;
-
-    cancel_handlers(boost::asio::error::not_connected);
-    return false;
-}
-
-bool rtc_stream::is_open() const
+bool rtc_stream_impl::is_open() const
 {
 	return m_data_channel && m_data_channel->isOpen();
 }
 
-std::size_t rtc_stream::available() const
+std::size_t rtc_stream_impl::available() const
 {
 	return m_incoming.size() + (m_data_channel ? m_data_channel->availableSize() : 0);
 }
 
-rtc_stream::endpoint_type rtc_stream::remote_endpoint(error_code& ec) const
+rtc_stream::endpoint_type rtc_stream_impl::remote_endpoint(error_code& ec) const
 {
     if (!is_open())
     {
@@ -198,7 +145,7 @@ rtc_stream::endpoint_type rtc_stream::remote_endpoint(error_code& ec) const
 			, std::stoul(addr->substr(pos+1)));
 }
 
-rtc_stream::endpoint_type rtc_stream::local_endpoint(error_code& ec) const
+rtc_stream::endpoint_type rtc_stream_impl::local_endpoint(error_code& ec) const
 {
 	if (!is_open())
     {
@@ -224,7 +171,35 @@ rtc_stream::endpoint_type rtc_stream::local_endpoint(error_code& ec) const
 			, std::stoul(addr->substr(pos+1)));
 }
 
-void rtc_stream::issue_read()
+void rtc_stream_impl::cancel_handlers(error_code const& ec)
+{
+	TORRENT_ASSERT(ec);
+
+	auto read_handler = std::exchange(m_read_handler, nullptr);
+	auto write_handler = std::exchange(m_write_handler, nullptr);
+
+	m_read_handler = nullptr;
+	m_read_buffer.clear();
+	m_read_buffer_size = 0;
+
+	m_write_handler = nullptr;
+	m_write_buffer.clear();
+	m_write_buffer_size = 0;
+
+	if(read_handler) read_handler(ec, 0);
+	if(write_handler) write_handler(ec, 0);
+}
+
+bool rtc_stream_impl::ensure_open()
+{
+	if(is_open()) return true;
+
+    cancel_handlers(boost::asio::error::not_connected);
+    return false;
+}
+
+
+void rtc_stream_impl::issue_read()
 {
 	TORRENT_ASSERT(m_read_handler);
 	TORRENT_ASSERT(m_read_buffer_size > 0);
@@ -235,13 +210,12 @@ void rtc_stream::issue_read()
 	std::size_t bytes_read = read_some(ec);
 	if(ec || bytes_read > 0) // error or synchronous read
 	{
-		m_read_buffer.clear();
-		m_read_buffer_size = 0;
+		clear_read_buffers();
 		post(m_io_context, std::bind(std::exchange(m_read_handler, nullptr), ec, bytes_read));
 	}
 }
 
-void rtc_stream::issue_write()
+void rtc_stream_impl::issue_write()
 {
 	TORRENT_ASSERT(m_write_handler);
 	TORRENT_ASSERT(m_write_buffer_size > 0);
@@ -252,7 +226,7 @@ void rtc_stream::issue_write()
 		m_data_channel->send(static_cast<rtc::byte const*>(target->data()), target->size());
 }
 
-std::size_t rtc_stream::read_some(error_code& ec)
+std::size_t rtc_stream_impl::read_some(error_code& ec)
 {
 	ec.clear();
 	if(!ensure_open()) return 0;
@@ -299,7 +273,13 @@ std::size_t rtc_stream::read_some(error_code& ec)
 	return bytes_read;
 }
 
-std::size_t rtc_stream::read_data(char const *data, std::size_t size)
+void rtc_stream_impl::clear_read_buffers()
+{
+	m_read_buffer.clear();
+    m_read_buffer_size = 0;
+}
+
+std::size_t rtc_stream_impl::read_data(char const *data, std::size_t size)
 {
 	std::size_t bytes_read = 0;
 	auto target = m_read_buffer.begin();
@@ -315,6 +295,24 @@ std::size_t rtc_stream::read_data(char const *data, std::size_t size)
         if (target->size() == 0) target = m_read_buffer.erase(target);
     }
     return bytes_read;
+}
+
+rtc_stream::rtc_stream(io_context& ioc, rtc_stream_init const& init)
+      : m_io_context(ioc)
+      , m_impl(std::make_shared<rtc_stream_impl>(ioc, init))
+{
+
+}
+
+rtc_stream::rtc_stream(rtc_stream&& rhs) noexcept
+	: m_io_context(rhs.m_io_context)
+{
+	std::swap(m_impl, rhs.m_impl);
+}
+
+rtc_stream::~rtc_stream()
+{
+
 }
 
 }
