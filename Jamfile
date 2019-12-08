@@ -46,6 +46,7 @@ else
 }
 
 use-project /try_signal : ./deps/try_signal ;
+use-project /libdatachannel : ./deps/libdatachannel ;
 
 VERSION = 2.0.0 ;
 
@@ -201,10 +202,12 @@ rule linking ( properties * )
 	if <link>shared in $(properties)
 	{
 		result += <library>/try_signal//try_signal/<link>static/<fpic>on ;
+		result += <library>/libdatachannel//libdatachannel/<link>static/<fpic>on ;
 	}
 	else
 	{
 		result += <library>/try_signal//try_signal/<link>static ;
+		result += <library>/libdatachannel//libdatachannel/<link>static ;
 	}
 
 	return $(result) ;
@@ -869,7 +872,6 @@ ED25519_SOURCES =
 local usage-requirements =
 	<include>./include
 	<include>./include/libtorrent
-	<include>./deps/libdatachannel/include
 	<include>./deps/json/include
 	<include>/usr/sfw/include
 # freebsd doesn't seem to include this automatically
