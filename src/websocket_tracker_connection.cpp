@@ -446,5 +446,5 @@ void websocket_tracker_connection::on_write(error_code const& ec, std::size_t /*
 
 }
 
-#endif
+#endif // TORRENT_USE_RTC
 

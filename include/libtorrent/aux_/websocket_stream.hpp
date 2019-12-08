@@ -135,8 +135,8 @@ private:
 	void on_resolve(error_code const& ec, std::vector<address> const& addresses);
 	void do_tcp_connect(std::vector<tcp::endpoint> endpoints);
 	void on_tcp_connect(error_code const& ec);
-	void do_tls_handshake();
-	void on_tls_handshake(error_code const& ec);
+	void do_ssl_handshake();
+	void on_ssl_handshake(error_code const& ec);
 	void do_handshake();
 	void on_handshake(error_code const& ec);
 	void on_read(error_code const& ec, std::size_t bytes_written, read_handler handler);

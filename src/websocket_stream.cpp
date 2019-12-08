@@ -30,6 +30,10 @@ POSSIBILITY OF SUCH DAMAGE.
 
 */
 
+#include "libtorrent/config.hpp" // for TORRENT_USE_RTC
+
+#if TORRENT_USE_RTC
+
 #include "libtorrent/aux_/websocket_stream.hpp"
 #include "libtorrent/config.hpp"
 #include "libtorrent/debug.hpp"
@@ -170,10 +174,10 @@ void websocket_stream::on_tcp_connect(error_code const& ec)
         return;
     }
 
-	do_tls_handshake();
+	do_ssl_handshake();
 }
 
-void websocket_stream::do_tls_handshake()
+void websocket_stream::do_ssl_handshake()
 {
 	auto& ssl_stream = m_stream.next_layer();
 
@@ -186,14 +190,14 @@ void websocket_stream::do_tls_handshake()
         return;
     }
 
-	ADD_OUTSTANDING_ASYNC("websocket_stream::on_tls_handshake");
+	ADD_OUTSTANDING_ASYNC("websocket_stream::on_ssl_handshake");
 	ssl_stream.async_handshake(ssl::stream_base::client
-			, std::bind(&websocket_stream::on_tls_handshake, shared_from_this(), _1));
+			, std::bind(&websocket_stream::on_ssl_handshake, shared_from_this(), _1));
 }
 
-void websocket_stream::on_tls_handshake(error_code const& ec)
+void websocket_stream::on_ssl_handshake(error_code const& ec)
 {
-	COMPLETE_ASYNC("websocket_stream::on_tls_handshake");
+	COMPLETE_ASYNC("websocket_stream::on_ssl_handshake");
 	if (ec)
     {
     	m_connecting = false;
@@ -206,17 +210,26 @@ void websocket_stream::on_tls_handshake(error_code const& ec)
 
 void websocket_stream::do_handshake()
 {
-	m_stream.set_option(websocket::stream_base::decorator(
-			[user_agent = m_user_agent](websocket::request_type& req)
-			{
-				if(!user_agent.empty()) req.set(http::field::user_agent, user_agent);
-			}
-		));
-
     ADD_OUTSTANDING_ASYNC("websocket_stream::on_handshake");
+
+	auto user_agent_handler = [user_agent = m_user_agent](websocket::request_type& req)
+    {
+		if(!user_agent.empty()) req.set(http::field::user_agent, user_agent);
+    };
+
+#if BOOST_VERSION >= 107000
+	m_stream.set_option(websocket::stream_base::decorator(user_agent_handler));
     m_stream.async_handshake(m_hostname
 		, m_target
-        , std::bind(&websocket_stream::on_handshake, shared_from_this(), _1));
+        , std::bind(&websocket_stream::on_handshake, shared_from_this(), _1)
+    );
+#else
+	m_stream.async_handshake_ex(m_hostname
+		, m_target
+		, user_agent_handler
+		, std::bind(&websocket_stream::on_handshake, shared_from_this(), _1)
+	);
+#endif
 }
 
 void websocket_stream::on_handshake(error_code const& ec)
@@ -256,4 +269,6 @@ void websocket_stream::on_write(error_code const& ec, std::size_t bytes_written,
 
 }
 }
+
+#endif // TORRENT_USE_RTC
 
