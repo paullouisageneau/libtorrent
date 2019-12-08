@@ -511,8 +511,8 @@ feature i2p : on off : composite propagated ;
 feature.compose <i2p>on : <define>TORRENT_USE_I2P=1 ;
 feature.compose <i2p>off : <define>TORRENT_USE_I2P=0 ;
 
-feature webtorrent : on off : composite propagated ;
-feature.compose <webtorrent>on : <define>TORRENT_USE_RTC=1 ;
+feature webtorrent : auto on off : composite propagated ;
+feature.compose <webtorrent>on : <define>TORRENT_USE_RTC=1 <crypto>openssl ;
 feature.compose <webtorrent>off : <define>TORRENT_USE_RTC=0 ;
 
 feature iconv : auto on off : composite propagated ;
@@ -869,6 +869,8 @@ ED25519_SOURCES =
 local usage-requirements =
 	<include>./include
 	<include>./include/libtorrent
+	<include>./deps/libdatachannel/include
+	<include>./deps/json/include
 	<include>/usr/sfw/include
 # freebsd doesn't seem to include this automatically
 # and iconv.h is installed there
