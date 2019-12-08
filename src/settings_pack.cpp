@@ -267,9 +267,6 @@ namespace libtorrent {
 		SET(max_peerlist_size, 3000, nullptr),
 		SET(max_paused_peerlist_size, 1000, nullptr),
 		SET(min_announce_interval, 5 * 60, nullptr),
-#ifdef TORRENT_USE_RTC
-		SET(min_websocket_announce_interval, 1 * 60, nullptr),
-#endif
 		SET(auto_manage_startup, 60, nullptr),
 		SET(seeding_piece_quota, 20, nullptr),
 		// TODO: deprecate this
@@ -360,7 +357,7 @@ namespace libtorrent {
 		SET(dht_item_lifetime, 0, nullptr),
 		SET(dht_sample_infohashes_interval, 21600, nullptr),
 		SET(dht_max_infohashes_sample_count, 20, nullptr),
-
+		SET(min_websocket_announce_interval, 1 * 60, nullptr),
 	}});
 
 #undef SET
