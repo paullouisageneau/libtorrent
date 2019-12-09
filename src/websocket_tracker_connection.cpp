@@ -212,7 +212,7 @@ void websocket_tracker_connection::do_send(tracker_request const& req)
 
 	json payload;
 	payload["action"] = "announce";
-	payload["info_hash"] = from_latin1({req.info_hash.data(), std::size_t(req.info_hash.size())});
+	payload["info_hash"] = from_latin1(req.info_hash);
 	payload["uploaded"] = req.uploaded;
 	payload["downloaded"] = req.downloaded;
 	payload["left"] = req.left;
@@ -227,13 +227,13 @@ void websocket_tracker_connection::do_send(tracker_request const& req)
 	if(req.event != event_t::none)
 		payload["event"] = event_string[static_cast<int>(req.event) - 1];
 
-	payload["peer_id"] = from_latin1({req.pid.data(), req.pid.size()});
+	payload["peer_id"] = from_latin1(req.pid);
 
 	payload["offers"] = json::array();
 	for(auto const& offer : req.offers)
 	{
 		json payload_offer;
-		payload_offer["offer_id"] = from_latin1({offer.id.data(), difference_type(offer.id.size())});
+		payload_offer["offer_id"] = from_latin1(offer.id);
 		payload_offer["offer"]["type"] = "offer";
 		payload_offer["offer"]["sdp"] = offer.sdp;
 		payload["offers"].push_back(payload_offer);
@@ -255,10 +255,10 @@ void websocket_tracker_connection::do_send(tracker_answer const& ans)
 {
     json payload;
     payload["action"] = "announce";
-    payload["info_hash"] = from_latin1({ans.info_hash.data(), difference_type(ans.info_hash.size())});
-    payload["offer_id"] = from_latin1({ans.answer.offer_id.data(), difference_type(ans.answer.offer_id.size())});
-    payload["to_peer_id"] = from_latin1({ans.answer.pid.data(), difference_type(ans.answer.pid.size())});
-    payload["peer_id"] =  from_latin1({ans.pid.data(), difference_type(ans.pid.size())});
+    payload["info_hash"] = from_latin1(ans.info_hash);
+    payload["offer_id"] = from_latin1(ans.answer.offer_id);
+    payload["to_peer_id"] = from_latin1(ans.answer.pid);
+    payload["peer_id"] =  from_latin1(ans.pid);
     payload["answer"]["type"] = "answer";
     payload["answer"]["sdp"] = ans.answer.sdp;
 
@@ -295,7 +295,7 @@ void websocket_tracker_connection::on_connect(error_code const& ec)
 		if (cb) cb->debug_log("*** WEBSOCKET_TRACKER_FAILED [ url: %s, error: %d ]"
 				, tracker_req().url.c_str(), int(ec.value()));
 #endif
-		while(!m_pending.empty()) m_pending.pop();
+		m_pending = {};
 		return;
 	}
 
