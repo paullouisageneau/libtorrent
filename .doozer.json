@@ -3,7 +3,7 @@
   "targets": {
     "x86_64": {
       "buildenv": "bionic-amd64",
-      "builddeps": ["build-essential", "libssl-dev", "wget", "clang-5.0"],
+      "builddeps": ["build-essential", "libssl-dev", "libnice-dev", "wget", "clang-5.0"],
       "buildcmd": [
         "clang++-5.0 --version",
         "wget -O - https://dl.bintray.com/boostorg/release/1.68.0/source/boost_1_68_0.tar.gz | tar xz",
