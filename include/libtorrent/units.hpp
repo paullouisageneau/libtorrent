@@ -159,9 +159,7 @@ namespace std {
 	struct hash<libtorrent::aux::strong_typedef<UnderlyingType, Tag>> : std::hash<UnderlyingType>
 	{
 		using base = std::hash<UnderlyingType>;
-		using argument_type = libtorrent::aux::strong_typedef<UnderlyingType, Tag>;
-		using result_type = typename base::result_type;
-		result_type operator()(argument_type const& s) const
+		std::size_t operator()(libtorrent::aux::strong_typedef<UnderlyingType, Tag> const& s) const
 		{ return this->base::operator()(static_cast<UnderlyingType>(s)); }
 	};
 }

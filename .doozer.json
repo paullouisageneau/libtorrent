@@ -2,14 +2,14 @@
   "submodules": ["simulation/libsimulator", "deps/try_signal"],
   "targets": {
     "x86_64": {
-      "buildenv": "xenial-amd64",
-      "builddeps": ["build-essential", "libssl-dev", "curl", "clang-3.8"],
+      "buildenv": "bionic-amd64",
+      "builddeps": ["build-essential", "libssl-dev", "wget", "clang-5.0"],
       "buildcmd": [
-        "clang++-3.8 --version",
-        "curl -Ls https://dl.bintray.com/boostorg/release/1.68.0/source/boost_1_68_0.tar.gz | tar xz",
+        "clang++-5.0 --version",
+        "wget -O - https://dl.bintray.com/boostorg/release/1.68.0/source/boost_1_68_0.tar.gz | tar xz",
         "(cd boost_1_68_0 && ./bootstrap.sh)",
         "",
-        "echo \"using clang : : clang++-3.8 ;\" > ~/user-config.jam",
+        "echo \"using clang : : clang++-5.0 ;\" > ~/user-config.jam",
         "cd simulation",
         "BOOST_ROOT=${PWD}/../boost_1_68_0 ../boost_1_68_0/bjam --hash -j${PARALLEL}"
       ]
@@ -17,9 +17,9 @@
     "macOS": {
       "buildenv": "osx",
       "buildcmd": [
-        "curl -Ls https://dl.bintray.com/boostorg/release/1.68.0/source/boost_1_68_0.tar.gz | tar xz",
+        "curl -LsS https://dl.bintray.com/boostorg/release/1.68.0/source/boost_1_68_0.tar.gz | tar xz",
         "(cd boost_1_68_0 && ./bootstrap.sh)",
-        "echo \"using darwin : : clang++ ;\" > ~/user-config.jam",
+        "echo \"using darwin : : clang++ : <compileflags>-mmacos-version-min=10.14 ;\" > ~/user-config.jam",
         "cd simulation",
         "BOOST_ROOT=${PWD}/../boost_1_68_0 ../boost_1_68_0/bjam --hash -j${PARALLEL}"
       ]
