@@ -36,6 +36,7 @@ POSSIBILITY OF SUCH DAMAGE.
 
 #include "libtorrent/aux_/escape_string.hpp"
 #include "libtorrent/aux_/session_settings.hpp"
+#include "libtorrent/aux_/latin1.hpp"
 #include "libtorrent/io.hpp"
 #include "libtorrent/ip_filter.hpp"
 #include "libtorrent/socket.hpp"
@@ -62,73 +63,9 @@ POSSIBILITY OF SUCH DAMAGE.
 namespace libtorrent {
 
 using namespace std::placeholders;
-
 namespace errc = boost::system::errc;
 
 using json = nlohmann::json;
-using difference_type = span<const char>::difference_type;
-
-std::string from_latin1(span<char const> s)
-{
-	// Convert ISO-8859-1 (aka latin1) input to UTF-8
-	std::string r;
-	r.reserve(s.size()*2);
-	for(auto it = s.begin(); it != s.end(); ++it)
-	{
-		unsigned char c = *it;
-		if (!(c & 0x80))
-		{
-			r.push_back(c);
-		}
-		else {
-			// 2 bytes needed for code point
-			r.push_back(0xC0 | (c >> 6));
-			r.push_back(0x80 | (c & 0x3F));
-		}
-	}
-	return r;
-}
-
-std::string to_latin1(std::string_view sv)
-{
-	std::string r;
-	r.reserve(sv.size());
-	auto it = sv.begin();
-	while(it != sv.end())
-	{
-		unsigned char c = *it;
-
-		// Find the number of bytes
-		size_t len;
-		if(!(c & 0x80)) len = 1;
-		else if (!(c & 0x20)) len = 2;
-		else if (!(c & 0x10)) len = 3;
-		else len = 4;
-
-		// Read the code point
-		unsigned int cp;
-		if(len == 1) cp = c; // fast path
-		else {
-			c &= 0xFF >> (len + 1);
-			cp = c << ((len - 1) * 6);
-			while(--len)
-			{
-				if(++it == sv.end())
-					throw std::invalid_argument("truncated UTF-8 string");
-				c = *it;
-				c &= 0x7F;
-				cp |= c << ((len - 1) * 6);
-			}
-		}
-
-		if(cp > 0xFF)
-			throw std::invalid_argument("codepoint out of latin1 range: " + std::to_string(cp));
-
-		r.push_back(static_cast<unsigned char>(cp));
-		++it;
-	}
-	return r;
-}
 
 websocket_tracker_connection::websocket_tracker_connection(io_context& ios
 		, tracker_manager& man
@@ -222,7 +159,7 @@ void websocket_tracker_connection::do_send(tracker_request const& req)
 
 	json payload;
 	payload["action"] = "announce";
-	payload["info_hash"] = from_latin1(req.info_hash);
+	payload["info_hash"] = aux::from_latin1(req.info_hash);
 	payload["uploaded"] = req.uploaded;
 	payload["downloaded"] = req.downloaded;
 	payload["left"] = req.left;
@@ -237,13 +174,13 @@ void websocket_tracker_connection::do_send(tracker_request const& req)
 	if(req.event != event_t::none)
 		payload["event"] = event_string[static_cast<int>(req.event) - 1];
 
-	payload["peer_id"] = from_latin1(req.pid);
+	payload["peer_id"] = aux::from_latin1(req.pid);
 
 	payload["offers"] = json::array();
 	for(auto const& offer : req.offers)
 	{
 		json payload_offer;
-		payload_offer["offer_id"] = from_latin1(offer.id);
+		payload_offer["offer_id"] = aux::from_latin1(offer.id);
 		payload_offer["offer"]["type"] = "offer";
 		payload_offer["offer"]["sdp"] = offer.sdp;
 		payload["offers"].push_back(payload_offer);
@@ -265,10 +202,10 @@ void websocket_tracker_connection::do_send(tracker_answer const& ans)
 {
     json payload;
     payload["action"] = "announce";
-    payload["info_hash"] = from_latin1(ans.info_hash);
-    payload["offer_id"] = from_latin1(ans.answer.offer_id);
-    payload["to_peer_id"] = from_latin1(ans.answer.pid);
-    payload["peer_id"] =  from_latin1(ans.pid);
+    payload["info_hash"] = aux::from_latin1(ans.info_hash);
+    payload["offer_id"] = aux::from_latin1(ans.answer.offer_id);
+    payload["to_peer_id"] = aux::from_latin1(ans.answer.pid);
+    payload["peer_id"] =  aux::from_latin1(ans.pid);
     payload["answer"]["type"] = "answer";
     payload["answer"]["sdp"] = ans.answer.sdp;
 
@@ -355,7 +292,7 @@ void websocket_tracker_connection::on_read(error_code const& ec, std::size_t /* 
 		if(it == payload.end())
 			throw std::invalid_argument("no info hash in message");
 
-		auto const raw_info_hash = to_latin1(it->get<std::string>());
+		auto const raw_info_hash = aux::to_latin1(it->get<std::string>());
 		if(raw_info_hash.size() != 20)
 			throw std::invalid_argument("invalid info hash size " + std::to_string(raw_info_hash.size()));
 
@@ -375,8 +312,8 @@ void websocket_tracker_connection::on_read(error_code const& ec, std::size_t /* 
 		{
 			auto const &payload_offer = *it;
 			auto sdp = payload_offer["sdp"].get<std::string>();
-			auto id = to_latin1(payload["offer_id"].get<std::string>());
-			auto pid = to_latin1(payload["peer_id"].get<std::string>());
+			auto id = aux::to_latin1(payload["offer_id"].get<std::string>());
+			auto pid = aux::to_latin1(payload["peer_id"].get<std::string>());
 
 			std::shared_ptr<websocket_tracker_connection> self(shared_from_this());
 			aux::rtc_offer offer{aux::rtc_offer_id(span<char const>(id)), peer_id(pid), std::move(sdp)
@@ -391,8 +328,8 @@ void websocket_tracker_connection::on_read(error_code const& ec, std::size_t /* 
 		{
 			auto const &payload_answer = *it;
 			auto sdp = payload_answer["sdp"].get<std::string>();
-			auto id = to_latin1(payload["offer_id"].get<std::string>());
-			auto pid = to_latin1(payload["peer_id"].get<std::string>());
+			auto id = aux::to_latin1(payload["offer_id"].get<std::string>());
+			auto pid = aux::to_latin1(payload["peer_id"].get<std::string>());
 
 			aux::rtc_answer answer{aux::rtc_offer_id(span<char const>(id)), peer_id(pid), std::move(sdp)};
 			cb->on_rtc_answer(answer);
