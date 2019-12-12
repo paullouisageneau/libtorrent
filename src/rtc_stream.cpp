@@ -68,19 +68,20 @@ void rtc_stream_impl::init()
 		auto self = weak_this.lock();
 		if(!self) return;
 
-		post(m_io_context, std::bind(&rtc_stream_impl::on_message
+		post(m_io_context, std::bind(&rtc_stream_impl::on_available
 			, self
 			, error_code{}
 		));
 	});
 
-	m_data_channel->onSent([this, weak_this]()
+	m_data_channel->setBufferedAmountLowThreshold(0);
+	m_data_channel->onBufferedAmountLow([this, weak_this]()
 	{
 		// Warning: this is called from another thread
 		auto self = weak_this.lock();
 		if(!self) return;
 
-		post(m_io_context, std::bind(&rtc_stream_impl::on_sent
+		post(m_io_context, std::bind(&rtc_stream_impl::on_buffered_low
 			, self
 			, error_code{}
 		));
@@ -107,7 +108,7 @@ void rtc_stream_impl::close()
 	cancel_handlers(boost::asio::error::operation_aborted);
 }
 
-void rtc_stream_impl::on_message(error_code const& ec)
+void rtc_stream_impl::on_available(error_code const& ec)
 {
 	if(!m_read_handler) return;
 
@@ -122,7 +123,7 @@ void rtc_stream_impl::on_message(error_code const& ec)
 	issue_read();
 }
 
-void rtc_stream_impl::on_sent(error_code const& ec)
+void rtc_stream_impl::on_buffered_low(error_code const& ec)
 {
 	if(!m_write_handler) return;
 
@@ -140,7 +141,7 @@ bool rtc_stream_impl::is_open() const
 
 std::size_t rtc_stream_impl::available() const
 {
-	return m_incoming.size() + (m_data_channel ? m_data_channel->availableSize() : 0);
+	return m_incoming.size() + (m_data_channel ? m_data_channel->availableAmount() : 0);
 }
 
 rtc_stream::endpoint_type rtc_stream_impl::remote_endpoint(error_code& ec) const
@@ -246,8 +247,7 @@ void rtc_stream_impl::issue_write()
 
 	if(!ensure_open()) return;
 
-	for(auto target = m_write_buffer.begin(); target != m_write_buffer.end(); ++target)
-		m_data_channel->send(static_cast<rtc::byte const*>(target->data()), target->size());
+	m_data_channel->sendBuffer(m_write_buffer.begin(), m_write_buffer.end());
 }
 
 std::size_t rtc_stream_impl::read_some(error_code& ec)

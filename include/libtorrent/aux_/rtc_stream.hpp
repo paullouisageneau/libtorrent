@@ -121,8 +121,8 @@ public:
 	void clear_read_buffers();
 
 private:
-	void on_message(error_code const& ec);
-	void on_sent(error_code const& ec);
+	void on_available(error_code const& ec);
+	void on_buffered_low(error_code const& ec);
 	bool ensure_open();
 
 	std::size_t read_data(char const *data, std::size_t size);

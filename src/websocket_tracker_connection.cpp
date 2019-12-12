@@ -239,7 +239,7 @@ void websocket_tracker_connection::on_connect(error_code const& ec)
 	{
 #ifndef TORRENT_DISABLE_LOGGIN
 		std::shared_ptr<request_callback> cb = requester();
-		if (cb) cb->debug_log("*** WEBSOCKET_TRACKER_CONNECT ERROR [ url: %s, error: %d ]"
+		if (cb) cb->debug_log("*** WEBSOCKET_TRACKER_CONNECT [ url: %s, ERROR: %d ]"
 				, tracker_req().url.c_str(), int(ec.value()));
 #endif
 		m_pending = {};
@@ -248,7 +248,7 @@ void websocket_tracker_connection::on_connect(error_code const& ec)
 
 #ifndef TORRENT_DISABLE_LOGGIN
 	std::shared_ptr<request_callback> cb = requester();
-    if (cb) cb->debug_log("*** WEBSOCKET_TRACKER_CONNECT SUCCESS [ url: %s ]"
+    if (cb) cb->debug_log("*** WEBSOCKET_TRACKER_CONNECT [ url: %s SUCCESS ]"
     		, tracker_req().url.c_str());
 #endif
 
@@ -351,7 +351,7 @@ void websocket_tracker_connection::on_read(error_code const& ec, std::size_t /* 
 	catch(std::exception const& e)
 	{
 #ifndef TORRENT_DISABLE_LOGGING
-        if(cb) cb->debug_log("*** WEBSOCKET_TRACKER_READ ERROR [ %s ]", e.what());
+        if(cb) cb->debug_log("*** WEBSOCKET_TRACKER_READ [ ERROR: %s ]", e.what());
 #endif
 		if(cb) cb->tracker_request_error(
                     tracker_req()
