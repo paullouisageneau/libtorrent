@@ -33,6 +33,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/aux_/rtc_stream.hpp"
 #include "libtorrent/config.hpp"
 #include "libtorrent/error.hpp"
+#include "libtorrent/span.hpp"
 
 #include <rtc/rtc.hpp>
 
@@ -247,7 +248,21 @@ void rtc_stream_impl::issue_write()
 
 	if(!ensure_open()) return;
 
-	m_data_channel->sendBuffer(m_write_buffer.begin(), m_write_buffer.end());
+	std::size_t const max_message_size = m_data_channel->maxMessageSize();
+	std::size_t bytes_written = 0;
+	while(!m_write_buffer.empty())
+	{
+		bytes_written += write_data(max_message_size);
+	}
+
+	TORRENT_ASSERT(bytes_written == m_write_buffer_size);
+
+	if(m_data_channel->bufferedAmount() == 0)
+	{
+		m_write_buffer.clear();
+		m_write_buffer_size = 0;
+		post(m_io_context, std::bind(std::exchange(m_write_handler, nullptr), error_code{}, bytes_written));
+	}
 }
 
 std::size_t rtc_stream_impl::read_some(error_code& ec)
@@ -307,7 +322,8 @@ std::size_t rtc_stream_impl::read_data(char const *data, std::size_t size)
 {
 	std::size_t bytes_read = 0;
 	auto target = m_read_buffer.begin();
-	while(target != m_read_buffer.end() && size > 0) {
+	while(target != m_read_buffer.end() && size > 0)
+	{
 		std::size_t to_copy = std::min(size, target->size());
         std::memcpy(target->data(), data, to_copy);
         data += to_copy;
@@ -319,6 +335,32 @@ std::size_t rtc_stream_impl::read_data(char const *data, std::size_t size)
         if (target->size() == 0) target = m_read_buffer.erase(target);
     }
     return bytes_read;
+}
+
+size_t rtc_stream_impl::write_data(std::size_t size)
+{
+	std::size_t total = 0;
+	auto target = m_write_buffer.begin();
+	while(target != m_write_buffer.end())
+	{
+		total += target->size();
+		if(total >= size) break;
+		++target;
+	}
+
+	if(total > size)
+	{
+		TORRENT_ASSERT(target != m_write_buffer.end());
+		std::size_t left = total - size;
+		std::size_t to_copy = target->size() - left;
+		m_write_buffer.insert(target, boost::asio::const_buffer(target->data(), to_copy));
+		(*target) += to_copy;
+		total = size;
+	}
+
+	m_data_channel->sendBuffer(m_write_buffer.begin(), target);
+	m_write_buffer.erase(m_write_buffer.begin(), target);
+	return total;
 }
 
 rtc_stream::rtc_stream(io_context& ioc, rtc_stream_init const& init)

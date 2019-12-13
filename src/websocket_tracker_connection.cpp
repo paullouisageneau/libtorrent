@@ -118,8 +118,6 @@ void websocket_tracker_connection::stop()
 		m_websocket.reset();
 	}
 
-	m_sending = false;
-
 	error_code ec{boost::asio::error::operation_aborted};
 	while(!m_pending.empty())
 	{
@@ -132,7 +130,7 @@ void websocket_tracker_connection::stop()
                         tracker_req()
                         , ec
                         , ec.message()
-                        , seconds32(60));
+                        , seconds32(120));
 	}
 
 	m_callbacks.clear();
@@ -276,13 +274,7 @@ void websocket_tracker_connection::on_connect(error_code const& ec)
 {
 	if(ec)
 	{
-		std::shared_ptr<request_callback> cb = requester();
-        if(cb) cb->tracker_request_error(
-                      tracker_req()
-                      , ec
-                      , ec.message()
-                      , seconds32(60));
-
+		fail(ec);
 		stop();
 		return;
 	}
@@ -426,9 +418,7 @@ void websocket_tracker_connection::fail(error_code const& ec)
 		tracker_req()
         , ec
         , ec.message()
-        , seconds32(60));
-
-    stop();
+        , seconds32(120));
 }
 
 }

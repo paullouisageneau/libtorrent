@@ -42,11 +42,9 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/time.hpp"
 #include "libtorrent/udp_socket.hpp"
 
-#include <atomic>
 #include <functional>
 #include <memory>
-#include <queue>
-#include <vector>
+#include <list>
 
 #ifndef BOOST_NO_EXCEPTIONS
 #include "libtorrent/aux_/disable_warnings_push.hpp"
@@ -126,6 +124,7 @@ private:
 	bool ensure_open();
 
 	std::size_t read_data(char const *data, std::size_t size);
+	std::size_t write_data(std::size_t size);
 
 	io_context& m_io_context;
 	std::shared_ptr<rtc::PeerConnection> m_peer_connection;
@@ -133,8 +132,8 @@ private:
 
 	std::function<void(error_code const&, std::size_t)> m_read_handler;
 	std::function<void(error_code const&, std::size_t)> m_write_handler;
-	std::vector<boost::asio::const_buffer> m_write_buffer;
-	std::vector<boost::asio::mutable_buffer> m_read_buffer;
+	std::list<boost::asio::const_buffer> m_write_buffer;
+	std::list<boost::asio::mutable_buffer> m_read_buffer;
 	std::size_t m_write_buffer_size = 0;
 	std::size_t m_read_buffer_size = 0;
 
