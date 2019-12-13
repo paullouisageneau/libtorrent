@@ -73,7 +73,11 @@ public:
 	~websocket_tracker_connection();
 
 	void start() override;
+	void stop();
 	void close() override;
+
+	bool is_started() const;
+	bool is_open() const;
 
 	void queue_request(tracker_request req, std::weak_ptr<request_callback> cb);
 	void queue_answer(tracker_answer ans);
@@ -90,11 +94,13 @@ private:
 	void do_send(tracker_answer const& ans);
 	void do_read();
 	void on_connect(error_code const& ec);
-	void on_timeout(error_code const& ec);
+	void on_timeout(error_code const& ec) override;
 	void on_read(error_code const& ec, std::size_t bytes_read);
 	void on_write(error_code const& ec, std::size_t bytes_written);
+	void fail(error_code const& ec);
 
 	io_context& m_io_context;
+	ssl::context m_ssl_context;
 	std::shared_ptr<aux::websocket_stream> m_websocket;
 	boost::beast::flat_buffer m_read_buffer;
 

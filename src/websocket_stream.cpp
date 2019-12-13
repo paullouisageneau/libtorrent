@@ -72,14 +72,15 @@ websocket_stream::websocket_stream(io_context& ios
 
 websocket_stream::~websocket_stream()
 {
-	close();
+
 }
 
 void websocket_stream::close()
 {
 	m_open = false;
 	m_connecting = false;
-	m_stream.close(websocket::close_code::none);
+	m_stream.async_close(websocket::close_code::none
+		, std::bind(&websocket_stream::on_close, shared_from_this(), _1));
 }
 
 close_reason_t websocket_stream::get_close_reason()
@@ -87,11 +88,13 @@ close_reason_t websocket_stream::get_close_reason()
 	return close_reason_t::none;
 }
 
-void websocket_stream::set_user_agent(std::string user_agent) {
+void websocket_stream::set_user_agent(std::string user_agent)
+{
 	m_user_agent = std::move(user_agent);
 }
 
-void websocket_stream::do_connect(std::string url) {
+void websocket_stream::do_connect(std::string url)
+{
 	if(m_open)
 	{
 		m_connect_handler(boost::asio::error::already_connected);
@@ -108,11 +111,13 @@ void websocket_stream::do_connect(std::string url) {
 	int port;
 	error_code ec;
 	std::tie(protocol, std::ignore, hostname,  port, m_target) = parse_url_components(m_url, ec);
-	if(ec) {
+	if(ec)
+	{
 		m_connect_handler(ec);
 		return;
 	}
-	if(protocol != "wss") {
+	if(protocol != "wss")
+	{
 		m_connect_handler(boost::asio::error::no_protocol_option);
 		return;
 	}
@@ -254,17 +259,25 @@ void websocket_stream::on_handshake(error_code const& ec)
 	m_connect_handler(error_code{});
 }
 
-void websocket_stream::on_read(error_code const& ec, std::size_t bytes_written, read_handler handler) {
+void websocket_stream::on_read(error_code const& ec, std::size_t bytes_written, read_handler handler)
+{
 	// Clean close from remote
-    if (ec == websocket::error::closed) {
-        m_open = false;
+    if (ec == websocket::error::closed)
+    {
+        close();
     }
 
 	handler(ec, bytes_written);
 }
 
-void websocket_stream::on_write(error_code const& ec, std::size_t bytes_written, write_handler handler) {
+void websocket_stream::on_write(error_code const& ec, std::size_t bytes_written, write_handler handler)
+{
 	handler(ec, bytes_written);
+}
+
+void websocket_stream::on_close(error_code const&)
+{
+
 }
 
 }

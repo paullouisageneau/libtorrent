@@ -141,6 +141,7 @@ private:
 	void on_handshake(error_code const& ec);
 	void on_read(error_code const& ec, std::size_t bytes_written, read_handler handler);
 	void on_write(error_code const& ec, std::size_t bytes_written, write_handler handler);
+	void on_close(error_code const& ec);
 
 	io_context& m_io_service;
 	resolver_interface& m_resolver;
