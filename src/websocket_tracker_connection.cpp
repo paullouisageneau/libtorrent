@@ -89,9 +89,11 @@ void websocket_tracker_connection::start()
 	if(is_started())
 		return;
 
+	if(m_websocket)
+		m_websocket->close();
+
 	auto const& settings = m_man.settings();
 	auto const& req = tracker_req();
-
 	m_websocket = std::make_shared<aux::websocket_stream>(m_io_context, m_man.host_resolver(), &m_ssl_context);
 
 	// in anonymous mode we omit the user agent to mitigate fingerprinting of
@@ -227,7 +229,7 @@ void websocket_tracker_connection::do_send(tracker_request const& req)
 
 #ifndef TORRENT_DISABLE_LOGGING
 	std::shared_ptr<request_callback> cb = requester();
-	if (cb) cb->debug_log("*** WEBSOCKET_TRACKER_WRITE [ %s ]", data.c_str());
+	if (cb) cb->debug_log("*** WEBSOCKET_TRACKER_WRITE [ size: %d data: %s ]", int(data.size()), data.c_str());
 #endif
 
 	std::shared_ptr<websocket_tracker_connection> self(shared_from_this());
@@ -250,7 +252,7 @@ void websocket_tracker_connection::do_send(tracker_answer const& ans)
 
 #ifndef TORRENT_DISABLE_LOGGING
 	std::shared_ptr<request_callback> cb = requester();
-	if (cb) cb->debug_log("*** WEBSOCKET_TRACKER_WRITE [ %s ]", data.c_str());
+	if (cb) cb->debug_log("*** WEBSOCKET_TRACKER_WRITE [ size: %d, data: %s ]", int(data.size()), data.c_str());
 #endif
 
 	std::shared_ptr<websocket_tracker_connection> self(shared_from_this());
@@ -292,8 +294,8 @@ void websocket_tracker_connection::on_timeout(error_code const& ec)
 	}
 
 #ifndef TORRENT_DISABLE_LOGGING
-        std::shared_ptr<request_callback> cb = requester();
-        if (cb) cb->debug_log("*** WEBSOCKET_TRACKER_TIMEOUT [ url: %s ]", tracker_req().url.c_str());
+	std::shared_ptr<request_callback> cb = requester();
+	if (cb) cb->debug_log("*** WEBSOCKET_TRACKER_TIMEOUT [ url: %s ]", tracker_req().url.c_str());
 #endif
 
 	fail(error_code(errors::timed_out));
@@ -302,8 +304,6 @@ void websocket_tracker_connection::on_timeout(error_code const& ec)
 
 void websocket_tracker_connection::on_read(error_code const& ec, std::size_t /* bytes_read */)
 {
-	std::shared_ptr<request_callback> cb = requester();
-
 	if(ec)
     {
 		fail(ec);
@@ -311,6 +311,7 @@ void websocket_tracker_connection::on_read(error_code const& ec, std::size_t /* 
         return;
     }
 
+	std::shared_ptr<request_callback> cb = requester();
     try {
     	auto const& buf = m_read_buffer.data();
 		auto const data = static_cast<char const*>(buf.data());

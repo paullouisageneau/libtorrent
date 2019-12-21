@@ -30,18 +30,23 @@ POSSIBILITY OF SUCH DAMAGE.
 
 */
 
-#include "libtorrent/aux_/rtc_signaling.hpp"
 #include "libtorrent/alert.hpp"
 #include "libtorrent/alert_manager.hpp"
 #include "libtorrent/alert_types.hpp"
-#include "libtorrent/aux_/generate_peer_id.hpp"
-#include "libtorrent/aux_/rtc_stream.hpp"
 #include "libtorrent/random.hpp"
 #include "libtorrent/torrent.hpp"
+#include "libtorrent/aux_/rtc_signaling.hpp"
+#include "libtorrent/aux_/rtc_stream.hpp"
+#include "libtorrent/aux_/session_interface.hpp"
+#include "libtorrent/aux_/generate_peer_id.hpp"
 
 #include "rtc/rtc.hpp"
+#ifndef TORRENT_DISABLE_LOGGING
+#include "plog/Formatters/FuncMessageFormatter.h"
+#endif
 
 #include <cstdarg>
+#include <sstream>
 
 namespace {
 	template <class T> std::weak_ptr<T> make_weak_ptr(std::shared_ptr<T> ptr) { return ptr; }
@@ -53,12 +58,44 @@ namespace aux {
 long const  RTC_CONNECTION_TIMEOUT = 120000; // msecs
 char const* RTC_STUN_SERVER = "stun.l.google.com:19302";
 
+#ifndef TORRENT_DISABLE_LOGGING
+class plog_appender : public plog::IAppender
+{
+public:
+	plog_appender(aux::session_interface& ses) : m_ses(ses) {}
+
+    void write(const plog::Record& record) override
+    {
+    	auto &alerts = m_ses.alerts();
+		if (!alerts.should_post<log_alert>()) return;
+
+		std::ostringstream ss;
+		ss << "libdatachannel: "
+		   << plog::severityToString(record.getSeverity()) << " "
+		   << plog::FuncMessageFormatter::format(record);
+		std::string line = ss.str();
+		line.pop_back(); // remove newline
+		alerts.emplace_alert<log_alert>(line.c_str());
+    }
+
+private:
+	aux::session_interface& m_ses;
+};
+#endif
+
 rtc_signaling::rtc_signaling(io_context& ioc, torrent* t, rtc_stream_handler handler)
 	: m_io_context(ioc)
 	, m_torrent(t)
 	, m_rtc_stream_handler(handler)
 {
+#ifndef TORRENT_DISABLE_LOGGING
 	debug_log("*** RTC signaling created");
+
+	static plog_appender appender(m_torrent->session());
+	rtc::InitLogger(plog::Severity::debug, &appender);
+#else
+	rtc::InitLogger(plog::Severity::none, nullptr);
+#endif
 }
 
 rtc_signaling::~rtc_signaling()
@@ -84,8 +121,9 @@ rtc_offer_id rtc_signaling::generate_offer_id() const
 
 void rtc_signaling::generate_offers(int count, offers_handler handler)
 {
+#ifndef TORRENT_DISABLE_LOGGING
 	debug_log("*** RTC signaling generating %d offers", count);
-
+#endif
 	m_offer_batches.push({count, handler});
 	while(count--)
 	{
@@ -127,8 +165,9 @@ void rtc_signaling::generate_offers(int count, offers_handler handler)
 
 void rtc_signaling::process_offer(rtc_offer const& offer)
 {
+#ifndef TORRENT_DISABLE_LOGGING
 	debug_log("*** RTC signaling processing remote offer");
-
+#endif
 	auto& conn = create_connection(offer.id, [this, offer](error_code const& ec, std::string const& sdp) {
 		rtc_answer answer{offer.id, offer.pid, sdp};
         post(m_io_context, std::bind(&rtc_signaling::on_generated_answer
@@ -147,13 +186,15 @@ void rtc_signaling::process_answer(rtc_answer const& answer)
 {
 	auto it = m_connections.find(answer.offer_id);
 	if(it == m_connections.end()) return;
-
+#ifndef TORRENT_DISABLE_LOGGING
 	debug_log("*** RTC signaling processing remote answer");
-
+#endif
 	connection& conn = it->second;
 	if(conn.pid)
 	{
+#ifndef TORRENT_DISABLE_LOGGING
 		debug_log("*** OOPS: Local RTC offer already got an answer");
+#endif
 		return;
 	}
 
@@ -165,9 +206,9 @@ rtc_signaling::connection& rtc_signaling::create_connection(rtc_offer_id const& 
 {
 	if(auto it = m_connections.find(offer_id); it != m_connections.end())
 		return it->second;
-
+#ifndef TORRENT_DISABLE_LOGGING
 	debug_log("*** RTC signaling creating connection");
-
+#endif
 	rtc::Configuration config;
 	config.iceServers.emplace_back(RTC_STUN_SERVER);
 
@@ -236,8 +277,9 @@ rtc_signaling::connection& rtc_signaling::create_connection(rtc_offer_id const& 
 
 void rtc_signaling::on_generated_offer(error_code const& ec, rtc_offer offer)
 {
+#ifndef TORRENT_DISABLE_LOGGING
 	debug_log("*** RTC signaling generated offer");
-
+#endif
 	while(!m_offer_batches.empty() && m_offer_batches.front().is_complete())
 	{
 		m_offer_batches.pop();
@@ -253,11 +295,10 @@ void rtc_signaling::on_generated_answer(error_code const& ec, rtc_answer answer,
         // Ignore
         return;
     }
-
+#ifndef TORRENT_DISABLE_LOGGING
 	debug_log("*** RTC signaling generated answer");
-
+#endif
 	TORRENT_ASSERT(offer.answer_callback);
-
 	peer_id pid = aux::generate_peer_id(m_torrent->settings());
 	offer.answer_callback(pid, answer);
 }
@@ -271,15 +312,16 @@ void rtc_signaling::on_data_channel(error_code const& ec
 
 	if(ec)
 	{
+#ifndef TORRENT_DISABLE_LOGGING
 		debug_log("*** RTC negociation failed");
+#endif
 		m_connections.erase(it);
 		return;
 	}
-
+#ifndef TORRENT_DISABLE_LOGGING
 	debug_log("*** RTC data channel open");
-
+#endif
 	TORRENT_ASSERT(dc);
-
 	connection const& conn = it->second;
 	rtc_stream_init init{conn.peer_connection, dc};
 	m_rtc_stream_handler(conn.pid.value_or(peer_id{}), init);
