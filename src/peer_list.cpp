@@ -797,9 +797,14 @@ namespace libtorrent {
 #if TORRENT_USE_ASSERTS
 		else
 		{
+			if (true
 #if TORRENT_USE_I2P
-			if (!p->is_i2p_addr)
+			&& !p->is_i2p_addr
 #endif
+#if TORRENT_USE_RTC
+			&& !p->is_rtc_addr
+#endif
+			)
 			{
 				std::pair<iterator, iterator> range = find_peers(p->address());
 				TORRENT_ASSERT(std::distance(range.first, range.second) == 1);
