@@ -45,12 +45,22 @@ POSSIBILITY OF SUCH DAMAGE.
 #include <boost/beast/core/flat_buffer.hpp>
 #include <boost/variant.hpp>
 
+#include "libtorrent/aux_/disable_warnings_push.hpp"
+#include <boost/asio/ssl.hpp>
+#include "libtorrent/aux_/disable_warnings_pop.hpp"
+
 #include <map>
 #include <memory>
 #include <queue>
 #include <tuple>
 
 namespace libtorrent {
+
+namespace ssl {
+    using boost::asio::ssl::context;
+    using boost::asio::ssl::stream_base;
+    using boost::asio::ssl::stream;
+}
 
 struct tracker_answer
 {
