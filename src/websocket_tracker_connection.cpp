@@ -174,7 +174,7 @@ void websocket_tracker_connection::send_pending()
     std::tie(msg, callback) = std::move(m_pending.front());
 	m_pending.pop();
 
-	boost::apply_visitor([&](auto const& m)
+	std::visit([&](auto const& m)
 		{
 			// Update requester and store callback
 			if(callback.lock())

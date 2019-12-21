@@ -42,17 +42,17 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/resolver_interface.hpp"
 #include "libtorrent/tracker_manager.hpp" // for tracker_connection
 
-#include <boost/beast/core/flat_buffer.hpp>
-#include <boost/variant.hpp>
-
 #include "libtorrent/aux_/disable_warnings_push.hpp"
 #include <boost/asio/ssl.hpp>
 #include "libtorrent/aux_/disable_warnings_pop.hpp"
+
+#include <boost/beast/core/flat_buffer.hpp>
 
 #include <map>
 #include <memory>
 #include <queue>
 #include <tuple>
+#include <variant>
 
 namespace libtorrent {
 
@@ -114,7 +114,7 @@ private:
 	std::shared_ptr<aux::websocket_stream> m_websocket;
 	boost::beast::flat_buffer m_read_buffer;
 
-	using tracker_message = boost::variant<tracker_request, tracker_answer>;
+	using tracker_message = std::variant<tracker_request, tracker_answer>;
 	std::queue<std::tuple<tracker_message, std::weak_ptr<request_callback>>> m_pending;
 	std::map<sha1_hash, std::weak_ptr<request_callback>> m_callbacks;
 
