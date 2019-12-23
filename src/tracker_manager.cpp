@@ -242,6 +242,13 @@ namespace libtorrent {
 		m_udp_conns.erase(c->transaction_id());
 	}
 
+	void tracker_manager::remove_request(websocket_tracker_connection const* c)
+	{
+		TORRENT_ASSERT(is_single_thread());
+		tracker_request const& req = c->tracker_req();
+		m_websocket_conns.erase(req.url);
+	}
+
 	void tracker_manager::update_transaction_id(
 		std::shared_ptr<udp_tracker_connection> c
 		, std::uint32_t tid)
@@ -288,7 +295,8 @@ namespace libtorrent {
 			return;
         }
 #if TORRENT_USE_RTC
-        else if (protocol == "ws" || protocol == "wss") {
+        else if (protocol == "ws" || protocol == "wss")
+        {
 			std::shared_ptr<request_callback> cb = c.lock();
 			if(!cb) return;
 			const int max_offers = 10;
@@ -299,16 +307,14 @@ namespace libtorrent {
 			{
 				if(!ec) req.offers = offers;
 
-				std::shared_ptr<websocket_tracker_connection> con;
 				auto it = m_websocket_conns.find(req.url);
-				if (it != m_websocket_conns.end()) {
-					con = it->second;
-					con->queue_request(std::move(req), c);
+				if (it != m_websocket_conns.end() && it->second->is_started()) {
+					it->second->queue_request(std::move(req), c);
 				} else {
-					con = std::make_shared<websocket_tracker_connection>(ios, *this, std::move(req), c);
+					auto con = std::make_shared<websocket_tracker_connection>(ios, *this, std::move(req), c);
+					con->start();
 					m_websocket_conns[req.url] = con;
 				}
-				con->start();
 			});
 			return;
         }
@@ -432,6 +438,7 @@ namespace libtorrent {
 		m_abort = true;
 		std::vector<std::shared_ptr<http_tracker_connection>> close_http_connections;
 		std::vector<std::shared_ptr<udp_tracker_connection>> close_udp_connections;
+		std::vector<std::shared_ptr<websocket_tracker_connection>> close_websocket_connections;
 
 		for (auto const& c : m_http_conns)
 		{
@@ -460,24 +467,41 @@ namespace libtorrent {
 			if (rc) rc->debug_log("aborting: %s", req.url.c_str());
 #endif
 		}
+        for (auto const& p : m_websocket_conns)
+        {
+            auto const& c = p.second;
+            tracker_request const& req = c->tracker_req();
+            if (req.event == event_t::stopped && !all)
+                continue;
+
+            close_websocket_connections.push_back(c);
+
+#ifndef TORRENT_DISABLE_LOGGING
+            std::shared_ptr<request_callback> rc = c->requester();
+            if (rc) rc->debug_log("aborting: %s", req.url.c_str());
+#endif
+        }
 
 		for (auto const& c : close_http_connections)
 			c->close();
 
 		for (auto const& c : close_udp_connections)
 			c->close();
+
+		for (auto const& c : close_websocket_connections)
+			c->close();
 	}
 
 	bool tracker_manager::empty() const
 	{
 		TORRENT_ASSERT(is_single_thread());
-		return m_http_conns.empty() && m_udp_conns.empty();
+		return m_http_conns.empty() && m_udp_conns.empty() && m_websocket_conns.empty();
 	}
 
 	int tracker_manager::num_requests() const
 	{
 		TORRENT_ASSERT(is_single_thread());
-		return int(m_http_conns.size() + m_udp_conns.size());
+		return int(m_http_conns.size() + m_udp_conns.size() + m_websocket_conns.empty());
 	}
 }
 

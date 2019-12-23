@@ -51,6 +51,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #include <functional>
 #include <vector>
 #include <string>
+#include <variant>
 
 namespace libtorrent {
 namespace aux {
@@ -99,16 +100,21 @@ struct TORRENT_EXTRA_EXPORT websocket_stream
 	{
 		if (!m_open)
 		{
-			post(m_io_service, std::bind<void>(handler, boost::asio::error::not_connected, std::size_t(0)));
+			post(m_io_service, std::bind(handler, boost::asio::error::not_connected, std::size_t(0)));
 			return;
 		}
 
-		using namespace std::placeholders;
-		m_stream.async_read(buffer, std::bind(&websocket_stream::on_read,
+		std::visit([&](auto &stream)
+		{
+			using namespace std::placeholders;
+			stream.async_read(buffer, std::bind(&websocket_stream::on_read,
 					shared_from_this(),
 					_1,
 					_2,
-					read_handler(handler)));
+					read_handler(handler))
+			);
+		}
+		, m_stream);
 	}
 
 	template <class Const_Buffer, class Handler>
@@ -116,17 +122,21 @@ struct TORRENT_EXTRA_EXPORT websocket_stream
 	{
 		if (!m_open)
 		{
-			post(m_io_service, std::bind<void>(handler
-				, boost::asio::error::not_connected, std::size_t(0)));
+			post(m_io_service, std::bind(handler, boost::asio::error::not_connected, std::size_t(0)));
 			return;
 		}
 
-		using namespace std::placeholders;
-		m_stream.async_write(buffer, std::bind(&websocket_stream::on_write,
+		std::visit([&](auto &stream)
+		{
+			using namespace std::placeholders;
+			stream.async_write(buffer, std::bind(&websocket_stream::on_write,
 					shared_from_this(),
 					_1,
 					_2,
-					write_handler(handler)));
+					write_handler(handler))
+			);
+		}
+		, m_stream);
 	}
 
 private:
@@ -139,13 +149,17 @@ private:
 	void on_ssl_handshake(error_code const& ec);
 	void do_handshake();
 	void on_handshake(error_code const& ec);
-	void on_read(error_code const& ec, std::size_t bytes_written, read_handler handler);
+	void on_read(error_code const& ec, std::size_t bytes_read, read_handler handler);
 	void on_write(error_code const& ec, std::size_t bytes_written, write_handler handler);
 	void on_close(error_code const& ec);
 
 	io_context& m_io_service;
 	resolver_interface& m_resolver;
-	websocket::stream<ssl::stream<tcp::socket>> m_stream;
+	ssl::context* m_ssl_context;
+
+	using stream_type = websocket::stream<tcp::socket>;
+	using ssl_stream_type = websocket::stream<ssl::stream<tcp::socket>>;
+	std::variant<stream_type, ssl_stream_type> m_stream;
 
 	std::string m_url;
 	std::string m_hostname;

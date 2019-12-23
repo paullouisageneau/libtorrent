@@ -83,7 +83,6 @@ public:
 	~websocket_tracker_connection();
 
 	void start() override;
-	void stop();
 	void close() override;
 
 	bool is_started() const;
@@ -99,13 +98,20 @@ private:
 			tracker_connection::shared_from_this());
 	}
 
+	std::weak_ptr<websocket_tracker_connection> weak_from_this()
+	{
+		return std::static_pointer_cast<websocket_tracker_connection>(
+			tracker_connection::shared_from_this());
+	}
+
 	void send_pending();
 	void do_send(tracker_request const& req);
 	void do_send(tracker_answer const& ans);
 	void do_read();
 	void on_connect(error_code const& ec);
 	void on_timeout(error_code const& ec) override;
-	void on_read(error_code const& ec, std::size_t bytes_read);
+	void on_read(std::weak_ptr<websocket_tracker_connection> weak_this
+			, error_code const& ec, std::size_t bytes_read);
 	void on_write(error_code const& ec, std::size_t bytes_written);
 	void fail(error_code const& ec);
 

@@ -85,6 +85,7 @@ namespace libtorrent {
 	struct timeout_handler;
 	class udp_tracker_connection;
 	class http_tracker_connection;
+	class websocket_tracker_connection;
 	struct resolver_interface;
 	struct counters;
 #if TORRENT_USE_I2P
@@ -373,6 +374,7 @@ enum class event_t : std::uint8_t
 
 		void remove_request(http_tracker_connection const* c);
 		void remove_request(udp_tracker_connection const* c);
+		void remove_request(websocket_tracker_connection const* c);
 		bool empty() const;
 		int num_requests() const;
 
