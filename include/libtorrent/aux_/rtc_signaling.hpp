@@ -41,7 +41,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/span.hpp"
 #include "libtorrent/time.hpp"
 
-#include <boost/asio/deadline_timer.hpp>
+#include <boost/asio/basic_waitable_timer.hpp>
 #include <boost/functional/hash.hpp>
 
 #include <functional>
@@ -49,6 +49,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #include <optional>
 #include <queue>
 #include <vector>
+#include <chrono>
 
 namespace rtc {
 	class PeerConnection;
@@ -122,6 +123,7 @@ public:
 #endif
 
 private:
+	using waitable_timer = boost::asio::basic_waitable_timer<std::chrono::steady_clock>;
 	struct connection
 	{
 		explicit connection(io_context& ioc) : timer(ioc) {}
@@ -129,7 +131,8 @@ private:
 		std::shared_ptr<rtc::PeerConnection> peer_connection;
 		std::shared_ptr<rtc::DataChannel> data_channel;
 		std::optional<peer_id> pid;
-		boost::asio::deadline_timer timer;
+
+		waitable_timer timer;
 	};
 
 	rtc_offer_id generate_offer_id() const;

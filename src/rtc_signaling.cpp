@@ -261,10 +261,10 @@ rtc_signaling::connection& rtc_signaling::create_connection(rtc_offer_id const& 
         ));
     });
 
-	int timeout = m_torrent->settings().get_int(settings_pack::webtorrent_connection_timeout);
+	time_duration const timeout = seconds(m_torrent->settings().get_int(settings_pack::webtorrent_connection_timeout));
 	connection conn(m_io_context);
 	conn.peer_connection = pc;
-	conn.timer.expires_from_now(boost::posix_time::seconds(timeout));
+	conn.timer.expires_after(timeout);
 	conn.timer.async_wait(std::bind(&rtc_signaling::on_data_channel
 		, this
         , boost::asio::error::timed_out
