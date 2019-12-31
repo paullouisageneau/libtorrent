@@ -55,9 +55,6 @@ namespace {
 namespace libtorrent {
 namespace aux {
 
-long const  RTC_CONNECTION_TIMEOUT = 120000; // msecs
-char const* RTC_STUN_SERVER = "stun.l.google.com:19302";
-
 #ifndef TORRENT_DISABLE_LOGGING
 class plog_appender : public plog::IAppender
 {
@@ -209,8 +206,11 @@ rtc_signaling::connection& rtc_signaling::create_connection(rtc_offer_id const& 
 #ifndef TORRENT_DISABLE_LOGGING
 	debug_log("*** RTC signaling creating connection");
 #endif
+
 	rtc::Configuration config;
-	config.iceServers.emplace_back(RTC_STUN_SERVER);
+	std::string stun_server = m_torrent->settings().get_str(settings_pack::webtorrent_stun_server);
+	if(!stun_server.empty())
+		config.iceServers.emplace_back(std::move(stun_server));
 
 	auto pc = std::make_shared<rtc::PeerConnection>(config);
 	auto weak_pc = make_weak_ptr(pc);
@@ -261,9 +261,10 @@ rtc_signaling::connection& rtc_signaling::create_connection(rtc_offer_id const& 
         ));
     });
 
+	int timeout = m_torrent->settings().get_int(settings_pack::webtorrent_connection_timeout);
 	connection conn(m_io_context);
 	conn.peer_connection = pc;
-	conn.timer.expires_from_now(boost::posix_time::milliseconds(RTC_CONNECTION_TIMEOUT));
+	conn.timer.expires_from_now(boost::posix_time::seconds(timeout));
 	conn.timer.async_wait(std::bind(&rtc_signaling::on_data_channel
 		, this
         , boost::asio::error::timed_out
