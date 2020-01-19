@@ -271,8 +271,7 @@ set(libtorrent_aux_include_files
 	win_util
 	rtc_signaling
 	rtc_stream
-	websocket_stream
-	latin1)
+	websocket_stream)
 
 set(try_signal_include_files
 	try_signal
@@ -410,7 +409,6 @@ set(sources
 	rtc_stream
 	websocket_stream
 	websocket_tracker_connection
-	latin1
 
 # -- extensions --
 	ut_pex

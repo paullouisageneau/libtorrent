@@ -413,8 +413,7 @@ SOURCES = \
   rtc_signaling.cpp               \
   rtc_stream.cpp                  \
   websocket_stream.cpp            \
-  websocket_tracker_connection.cpp \
-  latin1.cpp
+  websocket_tracker_connection.cpp
 
 HEADERS = \
   ConvertUTF.h                 \
@@ -650,7 +649,6 @@ HEADERS = \
   aux_/rtc_signaling.hpp            \
   aux_/rtc_stream.hpp               \
   aux_/websocket_stream.hpp         \
-  aux_/latin1.hpp                   \
   \
   extensions/smart_ban.hpp          \
   extensions/ut_metadata.hpp        \

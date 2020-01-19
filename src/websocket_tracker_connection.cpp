@@ -36,7 +36,7 @@ POSSIBILITY OF SUCH DAMAGE.
 
 #include "libtorrent/aux_/escape_string.hpp"
 #include "libtorrent/aux_/session_settings.hpp"
-#include "libtorrent/aux_/latin1.hpp"
+#include "libtorrent/utf8.hpp"
 #include "libtorrent/io.hpp"
 #include "libtorrent/ip_filter.hpp"
 #include "libtorrent/socket.hpp"
@@ -67,6 +67,28 @@ namespace errc = boost::system::errc;
 namespace error = boost::asio::error;
 
 using json = nlohmann::json;
+
+// Convert ISO-8859-1 (aka latin1) input to UTF-8
+std::string from_latin1(span<char const> s) {
+	std::u32string u32;
+	for(unsigned char c : s)
+		u32.push_back(c);
+	return utf32_utf8(u32);
+}
+
+// Convert UTF-8 input to ISO-8859-1 (aka latin1)
+// Throw an invalid_argument exception if it finds an unrepresentable character.
+std::string to_latin1(std::string_view sv) {
+	std::u32string u32 = utf8_utf32(sv);
+	std::string out;
+	for(char32_t cp : u32)
+	{
+		if(cp > 0xFF)
+			throw std::invalid_argument("code point out of latin1 range: " + std::to_string(cp));
+		out.push_back(static_cast<unsigned char>(cp));
+	}
+	return out;
+}
 
 websocket_tracker_connection::websocket_tracker_connection(io_context& ios
 		, tracker_manager& man
@@ -191,7 +213,7 @@ void websocket_tracker_connection::do_send(tracker_request const& req)
 
 	json payload;
 	payload["action"] = "announce";
-	payload["info_hash"] = aux::from_latin1(req.info_hash);
+	payload["info_hash"] = from_latin1(req.info_hash);
 	payload["uploaded"] = req.uploaded;
 	payload["downloaded"] = req.downloaded;
 	payload["left"] = req.left;
@@ -206,13 +228,13 @@ void websocket_tracker_connection::do_send(tracker_request const& req)
 	if(req.event != event_t::none)
 		payload["event"] = event_string[static_cast<int>(req.event) - 1];
 
-	payload["peer_id"] = aux::from_latin1(req.pid);
+	payload["peer_id"] = from_latin1(req.pid);
 
 	payload["offers"] = json::array();
 	for(auto const& offer : req.offers)
 	{
 		json payload_offer;
-		payload_offer["offer_id"] = aux::from_latin1(offer.id);
+		payload_offer["offer_id"] = from_latin1(offer.id);
 		payload_offer["offer"]["type"] = "offer";
 		payload_offer["offer"]["sdp"] = offer.sdp;
 		payload["offers"].push_back(payload_offer);
@@ -233,10 +255,10 @@ void websocket_tracker_connection::do_send(tracker_answer const& ans)
 {
     json payload;
     payload["action"] = "announce";
-    payload["info_hash"] = aux::from_latin1(ans.info_hash);
-    payload["offer_id"] = aux::from_latin1(ans.answer.offer_id);
-    payload["to_peer_id"] = aux::from_latin1(ans.answer.pid);
-    payload["peer_id"] =  aux::from_latin1(ans.pid);
+    payload["info_hash"] = from_latin1(ans.info_hash);
+    payload["offer_id"] = from_latin1(ans.answer.offer_id);
+    payload["to_peer_id"] = from_latin1(ans.answer.pid);
+    payload["peer_id"] =  from_latin1(ans.pid);
     payload["answer"]["type"] = "answer";
     payload["answer"]["sdp"] = ans.answer.sdp;
 
@@ -321,7 +343,7 @@ void websocket_tracker_connection::on_read(std::weak_ptr<websocket_tracker_conne
 		if(it == payload.end())
 			throw std::invalid_argument("no info hash in message");
 
-		auto const raw_info_hash = aux::to_latin1(it->get<std::string>());
+		auto const raw_info_hash = to_latin1(it->get<std::string>());
 		if(raw_info_hash.size() != 20)
 			throw std::invalid_argument("invalid info hash size " + std::to_string(raw_info_hash.size()));
 
@@ -341,8 +363,8 @@ void websocket_tracker_connection::on_read(std::weak_ptr<websocket_tracker_conne
 		{
 			auto const &payload_offer = *it;
 			auto sdp = payload_offer["sdp"].get<std::string>();
-			auto id = aux::to_latin1(payload["offer_id"].get<std::string>());
-			auto pid = aux::to_latin1(payload["peer_id"].get<std::string>());
+			auto id = to_latin1(payload["offer_id"].get<std::string>());
+			auto pid = to_latin1(payload["peer_id"].get<std::string>());
 
 			std::shared_ptr<websocket_tracker_connection> self(shared_from_this());
 			aux::rtc_offer offer{aux::rtc_offer_id(span<char const>(id)), peer_id(pid), std::move(sdp)
@@ -358,8 +380,8 @@ void websocket_tracker_connection::on_read(std::weak_ptr<websocket_tracker_conne
 		{
 			auto const &payload_answer = *it;
 			auto sdp = payload_answer["sdp"].get<std::string>();
-			auto id = aux::to_latin1(payload["offer_id"].get<std::string>());
-			auto pid = aux::to_latin1(payload["peer_id"].get<std::string>());
+			auto id = to_latin1(payload["offer_id"].get<std::string>());
+			auto pid = to_latin1(payload["peer_id"].get<std::string>());
 
 			aux::rtc_answer answer{aux::rtc_offer_id(span<char const>(id)), peer_id(pid), std::move(sdp)};
 			cb->on_rtc_answer(answer);
@@ -393,7 +415,6 @@ void websocket_tracker_connection::on_read(std::weak_ptr<websocket_tracker_conne
 void websocket_tracker_connection::on_write(error_code const& ec, std::size_t /* bytes_written */)
 {
 	m_sending = false;
-
 	if(ec)
 	{
 		fail(ec);

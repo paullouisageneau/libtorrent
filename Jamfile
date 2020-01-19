@@ -826,7 +826,6 @@ SOURCES =
 	rtc_stream
 	websocket_stream
 	websocket_tracker_connection
-	latin1
 
 # -- extensions --
 	ut_pex
