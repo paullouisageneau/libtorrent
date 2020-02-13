@@ -266,7 +266,7 @@ rtc_signaling::connection& rtc_signaling::create_connection(rtc_offer_id const& 
 	conn.peer_connection = pc;
 	conn.timer.expires_after(timeout);
 	conn.timer.async_wait(std::bind(&rtc_signaling::on_data_channel
-		, this
+		, shared_from_this()
         , boost::asio::error::timed_out
 		, offer_id
         , nullptr
