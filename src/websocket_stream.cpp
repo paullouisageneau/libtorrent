@@ -38,7 +38,6 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/config.hpp"
 #include "libtorrent/debug.hpp"
 #include "libtorrent/error.hpp"
-#include "libtorrent/invariant_check.hpp"
 #include "libtorrent/io_context.hpp"
 #include "libtorrent/parse_url.hpp"
 #include "libtorrent/random.hpp"
