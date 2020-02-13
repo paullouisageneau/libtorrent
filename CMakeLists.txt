@@ -17,7 +17,6 @@ include(GeneratePkgConfig)
 option(USE_GNUTLS "Use GnuTLS instead of OpenSSL for libdatachannel" OFF)
 option(USE_JUICE "Use libjuice instead of libnice for libdatachannel" ON)
 add_subdirectory(deps/libdatachannel EXCLUDE_FROM_ALL)
-add_subdirectory(deps/json EXCLUDE_FROM_ALL)
 
 set(libtorrent_include_files
 	add_torrent_params
@@ -790,7 +789,9 @@ include(CheckCXXCompilerFlag)
 add_subdirectory(bindings)
 
 if(webtorrent)
-target_link_libraries(torrent-rasterbar PRIVATE LibDataChannel::LibDataChannelStatic nlohmann_json::nlohmann_json)
+target_link_libraries(torrent-rasterbar PRIVATE LibDataChannel::LibDataChannelStatic)
+target_include_directories(torrent-rasterbar PRIVATE deps/json/include)
+target_compile_definitions(torrent-rasterbar PRIVATE BOOST_JSON_HEADER_ONLY)
 endif()
 
 install(TARGETS torrent-rasterbar EXPORT LibtorrentRasterbarTargets

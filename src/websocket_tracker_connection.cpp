@@ -45,7 +45,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #include "libtorrent/tracker_manager.hpp"
 #include "libtorrent/websocket_tracker_connection.hpp"
 
-#include "nlohmann/json.hpp"
+#include "boost/json.hpp"
 
 #include <boost/system/system_error.hpp>
 
@@ -65,8 +65,7 @@ namespace libtorrent {
 using namespace std::placeholders;
 namespace errc = boost::system::errc;
 namespace error = boost::asio::error;
-
-using json = nlohmann::json;
+namespace json = boost::json;
 
 // Convert ISO-8859-1 (aka latin1) input to UTF-8
 std::string from_latin1(span<char const> s) {
@@ -89,6 +88,12 @@ std::string to_latin1(std::string_view sv) {
 	}
 	return out;
 }
+
+// Overload for JSON strings
+std::string to_latin1(json::string_view sv) {
+      return to_latin1(std::string_view{sv.data(), sv.size()});
+}
+
 
 websocket_tracker_connection::websocket_tracker_connection(io_context& ios
 		, tracker_manager& man
@@ -211,7 +216,7 @@ void websocket_tracker_connection::do_send(tracker_request const& req)
 	// Update request
 	m_req = req;
 
-	json payload;
+	json::object payload;
 	payload["action"] = "announce";
 	payload["info_hash"] = from_latin1(req.info_hash);
 	payload["uploaded"] = req.uploaded;
@@ -230,17 +235,18 @@ void websocket_tracker_connection::do_send(tracker_request const& req)
 
 	payload["peer_id"] = from_latin1(req.pid);
 
-	payload["offers"] = json::array();
+	json::array &offers_array = payload["offers"].emplace_array();
 	for(auto const& offer : req.offers)
 	{
-		json payload_offer;
+		json::object payload_offer;
 		payload_offer["offer_id"] = from_latin1(offer.id);
-		payload_offer["offer"]["type"] = "offer";
-		payload_offer["offer"]["sdp"] = offer.sdp;
-		payload["offers"].push_back(payload_offer);
+		json::object &obj = payload_offer["offer"].emplace_object();
+		obj["type"] = "offer";
+		obj["sdp"] = offer.sdp;
+		offers_array.emplace_back(std::move(payload_offer));
 	}
 
-	std::string const data = payload.dump();
+	json::string const data = json::to_string(payload);
 
 #ifndef TORRENT_DISABLE_LOGGING
 	if(auto cb = requester())
@@ -253,16 +259,17 @@ void websocket_tracker_connection::do_send(tracker_request const& req)
 
 void websocket_tracker_connection::do_send(tracker_answer const& ans)
 {
-    json payload;
+	json::object payload;
     payload["action"] = "announce";
     payload["info_hash"] = from_latin1(ans.info_hash);
     payload["offer_id"] = from_latin1(ans.answer.offer_id);
     payload["to_peer_id"] = from_latin1(ans.answer.pid);
     payload["peer_id"] =  from_latin1(ans.pid);
-    payload["answer"]["type"] = "answer";
-    payload["answer"]["sdp"] = ans.answer.sdp;
+	json::object &obj = payload["answer"].emplace_object();
+    obj["type"] = "answer";
+    obj["sdp"] = ans.answer.sdp;
 
-	std::string const data = payload.dump();
+	json::string const data = json::to_string(payload);
 
 #ifndef TORRENT_DISABLE_LOGGING
 	if(auto cb = requester())
@@ -331,19 +338,18 @@ void websocket_tracker_connection::on_read(std::weak_ptr<websocket_tracker_conne
 		auto const data = static_cast<char const*>(buf.data());
     	auto const size = buf.size();
 
-		json payload;
-		payload = json::parse(data, data + size);
-
 #ifndef TORRENT_DISABLE_LOGGING
 		std::string str(data, size);
 		if(cb) cb->debug_log("*** WEBSOCKET_TRACKER_READ [ size: %d, data: %s ]", int(str.size()), str.c_str());
 #endif
 
+		json::object payload = json::parse({data, size}).as_object();
+
 		auto it = payload.find("info_hash");
 		if(it == payload.end())
 			throw std::invalid_argument("no info hash in message");
 
-		auto const raw_info_hash = to_latin1(it->get<std::string>());
+		auto const raw_info_hash = to_latin1(it->value().as_string());
 		if(raw_info_hash.size() != 20)
 			throw std::invalid_argument("invalid info hash size " + std::to_string(raw_info_hash.size()));
 
@@ -361,13 +367,13 @@ void websocket_tracker_connection::on_read(std::weak_ptr<websocket_tracker_conne
 
 		if(auto it = payload.find("offer"); it != payload.end())
 		{
-			auto const &payload_offer = *it;
-			auto sdp = payload_offer["sdp"].get<std::string>();
-			auto id = to_latin1(payload["offer_id"].get<std::string>());
-			auto pid = to_latin1(payload["peer_id"].get<std::string>());
+			json::object &payload_offer = it->value().as_object();
+			auto sdp = payload_offer["sdp"].as_string();
+			auto id = to_latin1(payload["offer_id"].as_string());
+			auto pid = to_latin1(payload["peer_id"].as_string());
 
 			std::shared_ptr<websocket_tracker_connection> self(shared_from_this());
-			aux::rtc_offer offer{aux::rtc_offer_id(span<char const>(id)), peer_id(pid), std::move(sdp)
+			aux::rtc_offer offer{aux::rtc_offer_id(span<char const>(id)), peer_id(pid), {sdp.data(), sdp.size()}
 				, [self, info_hash, id, pid](peer_id const& local_pid, aux::rtc_answer const& answer) {
 					self->queue_answer({std::move(info_hash), std::move(local_pid), std::move(answer)});
 					self->start();
@@ -378,24 +384,46 @@ void websocket_tracker_connection::on_read(std::weak_ptr<websocket_tracker_conne
 
 		if(auto it = payload.find("answer"); it != payload.end())
 		{
-			auto const &payload_answer = *it;
-			auto sdp = payload_answer["sdp"].get<std::string>();
-			auto id = to_latin1(payload["offer_id"].get<std::string>());
-			auto pid = to_latin1(payload["peer_id"].get<std::string>());
+			json::object &payload_answer = it->value().as_object();
+			auto sdp = payload_answer["sdp"].as_string();
+			auto id = to_latin1(payload["offer_id"].as_string());
+			auto pid = to_latin1(payload["peer_id"].as_string());
 
-			aux::rtc_answer answer{aux::rtc_offer_id(span<char const>(id)), peer_id(pid), std::move(sdp)};
+			aux::rtc_answer answer{aux::rtc_offer_id(span<char const>(id)), peer_id(pid), {sdp.data(), sdp.size()}};
 			cb->on_rtc_answer(answer);
 		}
 
 		if(payload.find("interval") != payload.end())
 		{
 			tracker_response resp;
-			resp.interval = std::max(seconds32{payload.value<int>("interval", 120)}
-				, seconds32{m_man.settings().get_int(settings_pack::min_websocket_announce_interval)});
-			resp.min_interval = seconds32{payload.value<int>("min_interval", 60)};
-			resp.complete = payload.value<int>("complete", -1);
-			resp.incomplete = payload.value<int>("incomplete", -1);
-			resp.downloaded = payload.value<int>("downloaded", -1);
+
+			if(auto it = payload.find("interval"); it != payload.end())
+                resp.interval = seconds32{it->value().as_int64()};
+            else
+				resp.interval = seconds32{120};
+
+			resp.interval = std::max(resp.interval
+					, seconds32{m_man.settings().get_int(settings_pack::min_websocket_announce_interval)});
+
+			if(auto it = payload.find("min_interval"); it != payload.end())
+                resp.min_interval = seconds32{it->value().as_int64()};
+            else
+                resp.min_interval = seconds32{60};
+
+			if(auto it = payload.find("complete"); it != payload.end())
+				resp.complete = it->value().as_int64();
+			else
+				resp.complete = -1;
+
+			if(auto it = payload.find("incomplete"); it != payload.end())
+				resp.incomplete = it->value().as_int64();
+			else
+				resp.incomplete = -1;
+
+			if(auto it = payload.find("downloaded"); it != payload.end())
+				resp.downloaded = it->value().as_int64();
+			else
+				resp.downloaded = -1;
 
 			cb->tracker_response(tracker_req(), {}, {}, resp);
 		}
