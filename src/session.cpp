@@ -121,7 +121,7 @@ namespace {
 		set.set_int(settings_pack::mixed_mode_algorithm, settings_pack::prefer_tcp);
 
 		set.set_int(settings_pack::max_out_request_queue, 1500);
-		set.set_int(settings_pack::max_allowed_in_request_queue, 2000);
+		set.set_int(settings_pack::max_allowed_in_request_queue, 50000);
 
 		set.set_int(settings_pack::max_peer_recv_buffer_size, 5 * 1024 * 1024);
 
